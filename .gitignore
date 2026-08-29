@@ -73,3 +73,10 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Plastic SCM local workspace state - machine-specific, and embeds the workspace
+# owner's email. Never belongs in a shared repo.
+/.plastic/
+
+# Newer VS solution format; Unity regenerates it.
+*.slnx

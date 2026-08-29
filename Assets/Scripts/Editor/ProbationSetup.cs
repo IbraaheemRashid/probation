@@ -2,6 +2,7 @@ using Probation.Game;
 using Probation.Player;
 using Unity.Netcode;
 using Unity.Netcode.Components;
+using Netcode.Transports.Facepunch;
 using Unity.Netcode.Transports.UTP;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -325,6 +326,28 @@ namespace Probation.EditorTools
             if (!set)
                 Debug.LogWarning($"[Probation] Could not find the authority field on {nt.gameObject.name}. " +
                                  "Set 'Authority Mode' to Owner on its NetworkTransform by hand.");
+        }
+
+        // ------------------------------------------------------------------ 5
+
+        [MenuItem("Probation/Setup/5 - Add Steam Networking", priority = 4)]
+        public static void AddSteamNetworking()
+        {
+            var manager = Object.FindFirstObjectByType<NetworkManager>();
+            if (manager == null) { Debug.LogError("No NetworkManager in the scene. Run step 4 first."); return; }
+
+            var go = manager.gameObject;
+
+            if (go.GetComponent<SteamManager>() == null) go.AddComponent<SteamManager>();
+            if (go.GetComponent<SteamLobbyBootstrap>() == null) go.AddComponent<SteamLobbyBootstrap>();
+
+            // Both transports live on the object at once. Whichever panel you press decides
+            // which one NetworkConfig points at, so direct-IP stays available for solo work.
+            if (go.GetComponent<FacepunchTransport>() == null) go.AddComponent<FacepunchTransport>();
+
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            Debug.Log("[Probation] Steam networking added. Steam must be running and logged in. " +
+                      "steam_appid.txt (480) must sit beside the built .exe as well as in the project root.");
         }
 
         // ------------------------------------------------------------------ helpers

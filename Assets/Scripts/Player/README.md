@@ -1,3 +1,35 @@
+# Getting set up from a fresh clone
+
+1. **Unity 6000.3.7f1** (Unity Hub will offer to install it when you open the project).
+2. Open the project. The first import takes several minutes while `Library/` is rebuilt from
+   scratch - this is normal, don't kill it.
+3. Open `Assets/Scenes/Greybox.unity`.
+4. Press Play.
+
+That is all. Netcode for GameObjects comes from the package manifest, the Steam transport is
+vendored in `Packages/` (patched - see its `PATCHES.md`), and `steam_appid.txt` is in the repo.
+Nothing needs installing by hand.
+
+## Two ways to connect
+
+**Direct IP** (top-left panel) - no Steam required. `127.0.0.1` to test the Editor against a
+local build. Use this for everyday iteration.
+
+**Steam** (second panel) - needs Steam running and logged in. Host lobby, then Invite friends
+to open the Steam overlay. This is how real playtests happen. It needs two machines: you cannot
+run two Steam clients on one PC.
+
+## If something looks broken
+
+- **No `Probation` menu in the menu bar** - the project does not compile. Editor scripts never
+  loaded. Scroll the Console to the *first* `CS####` error, not the loudest one.
+- **Burst "Failed to resolve assembly Assembly-CSharp-Editor"** - cascade noise from a compile
+  failure. Fix the real error and it goes away.
+- **Steam panel says "unavailable"** - Steam is not running, or you are not logged in.
+- Press **F3** in play mode for the diagnostics overlay.
+
+---
+
 # Player controller — setup and tuning
 
 Floating-capsule rigidbody controller for PROBATION. Client-authoritative by design:
@@ -242,3 +274,52 @@ netcode.
 The host has zero latency on its own tools; everyone else has RTT. In a competitive game that
 would matter. Here it does not — but host the person with the best connection, not whoever
 opened the game first.
+
+---
+
+# Connecting people
+
+`NetworkBootstrap` uses UnityTransport with a direct address. What that reaches:
+
+| Scenario | Address to enter | Works? |
+|---|---|---|
+| Two windows, one PC | `127.0.0.1` | Yes |
+| Same house / same wifi | Host's LAN IP (`192.168.x.x`) | Yes |
+| Over the internet, raw | Host's public IP | Only with UDP 7777 port-forwarded, and never behind CGNAT |
+| Over the internet, via VPN | Host's Tailscale IP (`100.x.x.x`) | Yes, no code changes |
+| Unity Relay | Join code | Yes — needs UGS project membership |
+| Steam sockets | Steam lobby | Yes — the shipping answer |
+
+## Right now: Tailscale
+
+Fastest way to playtest with friends this week. Everyone installs [Tailscale](https://tailscale.com),
+joins the same tailnet, and the host reads off their `100.x.x.x` address. Everyone else types it
+into the address field. Zero code changes, no port forwarding, no router access, works through
+CGNAT. Free for small groups.
+
+ZeroTier does the same job if anyone objects to Tailscale.
+
+## Then: Relay
+
+The planned Phase 1 finish. Blocked until the Unity account is a member of the `borgicy` org —
+see the cloud project note. Replaces the address field with a join code and nothing else changes.
+
+## Eventually: Steam sockets
+
+The shipping answer, and what Lethal Company uses. Free at any scale, NAT punching handled by
+Steam, no service accounts. Use the Facepunch transport for NGO. You can develop against
+Spacewar (app ID 480) before you have your own app ID.
+
+# Things that will bite during playtests
+
+- **Everyone must run the identical build.** NGO version-checks on connect and a mismatch fails
+  with an unhelpful error. Rebuild and redistribute together, every time.
+- **There is no host migration.** If the host quits or crashes, everybody drops and the run is
+  gone. Host the most stable machine. This is also a real design problem for a 45-minute run —
+  worth solving before Early Access, not before the slice.
+- **Windows Firewall** prompts the first time you host. Allow it on private networks.
+- **Default port is UDP 7777.**
+- **Test with real latency early.** Everything feels perfect at 0 ms on localhost. The first
+  session with someone on 60 ms is when you find out which interactions need wider tolerance
+  bands. Do that inside Phase 1 — not in Phase 4 when five procedures are already built on
+  assumptions formed at zero latency.
