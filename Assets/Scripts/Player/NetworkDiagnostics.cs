@@ -1,3 +1,4 @@
+using Probation.Interaction;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -78,6 +79,17 @@ namespace Probation.Player
                     GUILayout.Label($"actions    {Flag(reader.ActionsEnabled)}", _style);
                     GUILayout.Label($"move       {reader.Move.ToString("F2")}", _style);
                 }
+
+                var carry = local.GetComponent<PlayerCarry>();
+                if (carry != null)
+                {
+                    string held = carry.Carried != null
+                        ? $"{carry.Carried.DisplayName} ({carry.Carried.Kind})"
+                        : "-";
+                    GUILayout.Label($"carrying   {held}", _style);
+                }
+                if (loco != null)
+                    GUILayout.Label($"encumber   {loco.Encumbrance:0.00}", _style);
             }
 
             GUILayout.EndArea();

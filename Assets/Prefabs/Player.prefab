@@ -18,6 +18,7 @@ GameObject:
   - component: {fileID: 6506706673102431167}
   - component: {fileID: 1393000341397134600}
   - component: {fileID: 2428896700341752316}
+  - component: {fileID: 1501128035984333028}
   m_Layer: 8
   m_Name: Player
   m_TagString: Untagged
@@ -222,10 +223,13 @@ MonoBehaviour:
   look: {fileID: 646668390237806299}
   locomotion: {fileID: 8798341418587533612}
   interactor: {fileID: 8255573022719012183}
+  carry: {fileID: 1501128035984333028}
   cursorLock: {fileID: 3835959970621980300}
   playerCamera: {fileID: 494652697979361610}
   audioListener: {fileID: 5507464005352466366}
   body: {fileID: 1184554506826775256}
+  spawnSpacing: {x: 1.5, y: 0, z: 0}
+  spawnOrigin: {x: 0, y: 1, z: 0}
 --- !u!114 &2428896700341752316
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -272,6 +276,28 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &1501128035984333028
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1307607299905521931}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9de15cf5c3001c04f9833834a021e209, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerCarry
+  ShowTopMostFoldoutHeaderGroup: 1
+  input: {fileID: 8084586716203328940}
+  interactor: {fileID: 8255573022719012183}
+  locomotion: {fileID: 8798341418587533612}
+  handAnchor: {fileID: 7333480009751986023}
+  holdSpring: 300
+  holdDamper: 30
+  holdTorque: 25
+  dropDistance: 2
+  grabTimeout: 1
 --- !u!1 &2889585250866751481
 GameObject:
   m_ObjectHideFlags: 0

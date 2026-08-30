@@ -1,4 +1,5 @@
 using Probation.Game;
+using Probation.Interaction;
 using Probation.Player;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -105,6 +106,7 @@ namespace Probation.EditorTools
             var look = pivot.AddComponent<PlayerLook>();
             var locomotion = root.AddComponent<PlayerLocomotion>();
             var interactor = root.AddComponent<PlayerInteractor>();
+            var carry = root.AddComponent<PlayerCarry>();
 
             var inputAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
             if (inputAsset == null)
@@ -119,6 +121,11 @@ namespace Probation.EditorTools
             SetRefs(interactor,
                 ("input", reader),
                 ("viewSource", cameraGo.transform));
+            SetRefs(carry,
+                ("input", reader),
+                ("interactor", interactor),
+                ("locomotion", locomotion),
+                ("handAnchor", hand.transform));
 
             SetMask(locomotion, "groundMask", worldMask);
             SetMask(interactor, "interactMask", worldMask);
@@ -213,6 +220,19 @@ namespace Probation.EditorTools
 
                 // Prefabs built before CursorLock existed are missing it, and without it the
                 // cursor unlocks the moment a remote player spawns.
+                var carry = contents.GetComponent<PlayerCarry>();
+                if (carry == null)
+                {
+                    carry = contents.AddComponent<PlayerCarry>();
+                    var handAnchor = contents.transform.Find("CameraPivot/HandAnchor");
+                    SetRefs(carry,
+                        ("input", contents.GetComponent<PlayerInputReader>()),
+                        ("interactor", contents.GetComponent<PlayerInteractor>()),
+                        ("locomotion", contents.GetComponent<PlayerLocomotion>()),
+                        ("handAnchor", handAnchor));
+                    Debug.Log("[Probation] Added missing PlayerCarry to the Player prefab.");
+                }
+
                 var cursorLock = contents.GetComponent<CursorLock>();
                 if (cursorLock == null)
                 {
@@ -229,6 +249,7 @@ namespace Probation.EditorTools
                     ("locomotion", contents.GetComponent<PlayerLocomotion>()),
                     ("interactor", contents.GetComponent<PlayerInteractor>()),
                     ("cursorLock", cursorLock),
+                    ("carry", carry),
                     ("playerCamera", camera != null ? camera.GetComponent<Camera>() : null),
                     ("audioListener", camera != null ? camera.GetComponent<AudioListener>() : null),
                     ("body", contents.GetComponent<Rigidbody>()));
@@ -303,7 +324,7 @@ namespace Probation.EditorTools
             Debug.Log("[Probation] Player networked. Save the scene, then File > Build Profiles to make a test build.");
         }
 
-        private static void ConfigureTransform(NetworkTransform nt, bool localSpace, bool syncScale)
+        private static void ConfigureTransform(NetworkTransform nt, bool localSpace, bool syncScale, bool ownerAuthority = true)
         {
             nt.InLocalSpace = localSpace;
             nt.Interpolate = true;
@@ -317,10 +338,10 @@ namespace Probation.EditorTools
             {
                 var prop = so.FindProperty(name);
                 if (prop == null) continue;
-                prop.enumValueIndex = 1;   // 0 = Server, 1 = Owner
+                prop.enumValueIndex = ownerAuthority ? 1 : 0;   // 0 = Server, 1 = Owner
                 so.ApplyModifiedPropertiesWithoutUndo();
                 set = true;
-                Debug.Log($"[Probation] {nt.gameObject.name}: authority set via '{name}'.");
+                Debug.Log($"[Probation] {nt.gameObject.name}: authority = {(ownerAuthority ? "Owner" : "Server")} (field '{name}').");
                 break;
             }
             if (!set)
@@ -348,6 +369,75 @@ namespace Probation.EditorTools
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             Debug.Log("[Probation] Steam networking added. Steam must be running and logged in. " +
                       "steam_appid.txt (480) must sit beside the built .exe as well as in the project root.");
+        }
+
+        // ------------------------------------------------------------------ 6
+
+        [MenuItem("Probation/Setup/6 - Add Grabbable Props", priority = 5)]
+        public static void AddGrabbableProps()
+        {
+            if (Object.FindFirstObjectByType<NetworkManager>() == null)
+            {
+                Debug.LogError("No NetworkManager in the scene. Run step 4 first.");
+                return;
+            }
+
+            var existing = GameObject.Find("Props");
+            if (existing != null) Object.DestroyImmediate(existing);
+
+            var root = new GameObject("Props");
+
+            // A surface to work over, so tools are picked up off something rather than the floor.
+            var table = Box("Operating table", new Vector3(3f, 0.45f, 6f), new Vector3(2.2f, 0.9f, 1.1f));
+            table.transform.SetParent(root.transform, true);
+
+            // Tools: light, precise, one pair of hands each. Ownership follows the holder.
+            Tool("Scalpel",   new Vector3(2.4f, 1.0f, 6.0f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+            Tool("Forceps",   new Vector3(2.8f, 1.0f, 6.0f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+            Tool("Retractor", new Vector3(3.2f, 1.0f, 6.0f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
+            Tool("Bone saw",  new Vector3(3.7f, 1.0f, 6.0f), new Vector3(0.10f, 0.06f, 0.40f), 3.0f, 0.25f);
+
+            // Heavy: host keeps authority, any number of hands, latency reads as weight.
+            Heavy("Gurney",  new Vector3(6.5f, 0.6f, 6.0f), new Vector3(1.9f, 0.6f, 0.85f), 45f, 0.55f);
+            Heavy("Patient", new Vector3(6.5f, 1.2f, 6.0f), new Vector3(0.55f, 0.55f, 1.7f), 70f, 0.85f);
+
+            foreach (var g in Object.FindObjectsByType<Grabbable>(FindObjectsSortMode.None))
+                if (g.transform.parent == null) g.transform.SetParent(root.transform, true);
+
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            Debug.Log("[Probation] Props added. Scene NetworkObjects spawn automatically when you host.");
+        }
+
+        private static void Tool(string name, Vector3 position, Vector3 size, float mass, float encumbrance) =>
+            Grab(name, position, size, mass, encumbrance, GrabKind.Tool);
+
+        private static void Heavy(string name, Vector3 position, Vector3 size, float mass, float encumbrance) =>
+            Grab(name, position, size, mass, encumbrance, GrabKind.Heavy);
+
+        private static void Grab(string name, Vector3 position, Vector3 size, float mass,
+                                 float encumbrance, GrabKind kind)
+        {
+            var go = Box(name, position, size);
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = mass;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            go.AddComponent<NetworkObject>();
+
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = name.ToLowerInvariant();
+            so.FindProperty("kind").enumValueIndex = (int)kind;
+            so.FindProperty("encumbrance").floatValue = encumbrance;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            // A tool's authority moves with whoever holds it. A heavy object's never does -
+            // that is the whole reason two people can haul one without fighting over ownership.
+            var nt = go.AddComponent<NetworkTransform>();
+            ConfigureTransform(nt, localSpace: false, syncScale: false,
+                               ownerAuthority: kind == GrabKind.Tool);
         }
 
         // ------------------------------------------------------------------ helpers

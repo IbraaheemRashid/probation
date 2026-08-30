@@ -22,8 +22,10 @@ namespace Probation.Player
         public IInteractable Focused { get; private set; }
         public Component FocusedComponent { get; private set; }
 
-        /// <summary>Set by the carry system so interactables can ask what this player is holding.</summary>
         public PlayerLocomotion Locomotion { get; private set; }
+
+        /// <summary>This player's hands. Interactables route grabs through it.</summary>
+        public PlayerCarry Carry { get; private set; }
 
         private void Reset()
         {
@@ -36,6 +38,7 @@ namespace Probation.Player
         {
             if (input == null) input = GetComponent<PlayerInputReader>();
             Locomotion = GetComponent<PlayerLocomotion>();
+            Carry = GetComponent<PlayerCarry>();
             if (viewSource == null)
             {
                 Camera cam = GetComponentInChildren<Camera>();

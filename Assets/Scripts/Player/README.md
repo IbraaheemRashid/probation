@@ -323,3 +323,50 @@ Spacewar (app ID 480) before you have your own app ID.
   session with someone on 60 ms is when you find out which interactions need wider tolerance
   bands. Do that inside Phase 1 — not in Phase 4 when five procedures are already built on
   assumptions formed at zero latency.
+
+---
+
+# Phase 2 — grabbing
+
+Two grab mechanics, chosen per object by `Grabbable.kind`. Neither ever puts two owners on one
+Rigidbody. Nothing is ever parented to the hand: parenting removes the object from the physics
+simulation, and the physics is where the comedy lives.
+
+## `GrabKind.Tool`
+
+Scalpel, forceps, retractor, bone saw. Ownership transfers to the holder, so the tool responds
+at local framerate — round-trip lag on a blade would gut the surgery minigames.
+
+- Client asks; the **host** decides and calls `ChangeOwnership`. One pair of hands at a time.
+- Held by spring force and torque toward `HandAnchor`, applied by the owner in `FixedUpdate`.
+- Released back to the host on drop, so an idle tool has a stable authority.
+- `NetworkTransform` authority: **Owner**.
+
+## `GrabKind.Heavy`
+
+Patient, corpse, gurney. The host keeps ownership permanently and every grab is a spring force.
+
+- Any number of interns can grab at once; the physics resolves the tug-of-war.
+- The host reads each grabber's hand position **straight off the replicated player transform**,
+  so hauling costs no extra network traffic at all.
+- Each grabber pulls from the point they actually grabbed, in object-local space.
+- `NetworkTransform` authority: **Server**, always.
+
+## Known simplification
+
+Grabs are **not predicted locally** yet. Picking up a tool waits one round trip for ownership,
+which is fine on LAN and noticeable over Steam. The plan calls for optimistic local prediction
+with a snap-back if the host refuses; `PlayerCarry.TryGrab` is where that goes. Deliberately
+left out to keep the first version readable.
+
+## Attribution
+
+`IncidentLog` (host-only) already records pickups. Every system from here that could produce a
+review line should record one as it happens — see the note in the slice plan about why this is
+a phase 2 concern rather than a phase 6 one.
+
+## Setup
+
+`Probation ▸ Setup ▸ 6 - Add Grabbable Props` builds a table, four tools and a gurney plus a
+patient into the current scene. They are scene NetworkObjects, so the host spawns them
+automatically - no prefab registration needed.

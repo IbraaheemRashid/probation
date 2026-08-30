@@ -18,6 +18,7 @@ namespace Probation.Player
         [SerializeField] private PlayerLook look;
         [SerializeField] private PlayerLocomotion locomotion;
         [SerializeField] private PlayerInteractor interactor;
+        [SerializeField] private PlayerCarry carry;
         [SerializeField] private CursorLock cursorLock;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
@@ -59,6 +60,7 @@ namespace Probation.Player
             if (look != null) look.enabled = mine;
             if (locomotion != null) locomotion.enabled = mine;
             if (interactor != null) interactor.enabled = mine;
+            if (carry != null) carry.enabled = mine;
 
             // Only one of these may ever be live, or Unity logs an error every frame and
             // proximity voice picks the wrong ears.
