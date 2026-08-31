@@ -10,84 +10,31 @@ namespace Probation.Game
     /// before anything ships.
     ///
     /// The important part is not the layout, it is <em>what each intern is allowed to see</em>.
-    /// Specialism grants information nobody else has, and that asymmetry is the whole reason
-    /// this is a proximity chat game: the only way through a surgery is to say out loud what
-    /// only you can read.
+    /// The information asymmetry comes from instruments, not from roles. There is one scanner;
+    /// whoever is holding it can read the patient and is not holding a scalpel, so the reading
+    /// has to be said out loud to be worth anything. That is why this is a voice game.
     /// </summary>
     public class SurgeryHud : MonoBehaviour
     {
         [SerializeField] private float patientRange = 4f;
-        [SerializeField] private float noticeSeconds = 5f;
         [SerializeField] private float scannerRange = 9f;
 
         private GUIStyle _label;
-        private GUIStyle _big;
         private GUIStyle _prompt;
-        private GUIStyle _notice;
+        private float _staminaFade;
 
         private void OnGUI()
         {
             _label ??= new GUIStyle(GUI.skin.label) { fontSize = 13, richText = true };
-            _big ??= new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 20, richText = true, alignment = TextAnchor.MiddleCenter
-            };
             _prompt ??= new GUIStyle(GUI.skin.label)
             {
                 fontSize = 15, richText = true, alignment = TextAnchor.MiddleCenter,
                 fontStyle = FontStyle.Bold
             };
-            _notice ??= new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 17, richText = true, alignment = TextAnchor.MiddleCenter
-            };
 
-            DrawShiftBanner();
-            DrawReview();
-            DrawLocker();
             DrawOperationPanel();
             DrawScannerPanel();
             DrawCrosshairAndPrompt();
-            DrawNotices();
-        }
-
-        // ---------------------------------------------------------------- shift
-
-        private void DrawShiftBanner()
-        {
-            var director = ShiftDirector.Instance;
-            if (director == null) return;
-
-            GUILayout.BeginArea(new Rect(Screen.width * 0.5f - 150f, 8f, 300f, 34f), GUI.skin.box);
-
-            string text = director.Phase switch
-            {
-                ShiftPhase.WeekOver => "<b>WEEK OVER</b>",
-                ShiftPhase.Review => $"<b>PERFORMANCE REVIEW</b>  {director.TimeLeft:0}s",
-                _ => $"<b>DAY {director.Day}/{director.ShiftsPerWeek}</b>   " +
-                     $"{Mathf.FloorToInt(director.TimeLeft / 60f)}:{Mathf.FloorToInt(director.TimeLeft % 60f):00}   " +
-                     $"losses {director.Deaths}/{director.DeathLimit}",
-            };
-
-            GUILayout.Label(text, _big);
-            GUILayout.EndArea();
-        }
-
-        private void DrawReview()
-        {
-            var director = ShiftDirector.Instance;
-            if (director == null || director.Phase != ShiftPhase.Review) return;
-            if (director.ReviewLines.Count == 0) return;
-
-            float height = Mathf.Min(360f, 40f + director.ReviewLines.Count * 18f);
-            GUILayout.BeginArea(new Rect(Screen.width * 0.5f - 230f, 60f, 460f, height), GUI.skin.box);
-            GUILayout.Label("<b>The supervisor reads the shift back to you.</b>", _label);
-            GUILayout.Space(6f);
-
-            foreach (string line in director.ReviewLines)
-                GUILayout.Label(line, _label);
-
-            GUILayout.EndArea();
         }
 
         // ---------------------------------------------------------------- crosshair
@@ -115,77 +62,55 @@ namespace Probation.Game
             if (carry != null && carry.IsCarrying)
                 prompt = $"[E] drop the {carry.Carried.DisplayName}";
             else if (interactor != null && interactor.Focused != null)
-                prompt = $"[E] {interactor.Focused.Prompt}";
+                prompt = $"[E] {interactor.Focused.Prompt}   <i>(tap to keep, hold to carry)</i>";
+
+            DrawStamina(local, cx, cy);
 
             if (prompt == null) return;
 
             var size = _prompt.CalcSize(new GUIContent(prompt));
-            GUI.Label(new Rect(cx - size.x * 0.5f, cy + 22f, size.x, size.y), prompt, _prompt);
+            GUI.Label(new Rect(cx - size.x * 0.5f, cy + 44f, size.x, size.y), prompt, _prompt);
         }
-
-        // ---------------------------------------------------------------- notices
-
-        /// <summary>Recent events, fading out. What just happened, in words, for now.</summary>
-        private void DrawNotices()
-        {
-            var director = ShiftDirector.Instance;
-            if (director == null || director.Notices.Count == 0) return;
-
-            float y = Screen.height * 0.5f - 120f;
-
-            foreach (var notice in director.Notices)
-            {
-                float age = Time.time - notice.At;
-                if (age > noticeSeconds) continue;
-
-                float alpha = Mathf.Clamp01((noticeSeconds - age) / 1.5f);
-                GUI.color = new Color(1f, 1f, 1f, alpha);
-
-                var size = _notice.CalcSize(new GUIContent(notice.Text));
-                GUI.Label(new Rect(Screen.width * 0.5f - size.x * 0.5f, y, size.x, size.y),
-                          notice.Text, _notice);
-                y += 22f;
-            }
-
-            GUI.color = Color.white;
-        }
-
-        // ---------------------------------------------------------------- locker
 
         /// <summary>
-        /// Pick your specialism. Per shift, never permanent, never assigned by the game, and two
-        /// people may pick the same one - a permanent class would let a friend grief you out of
-        /// your favourite toy for the whole week, and would kill the "we have no anaesthetist"
-        /// panic that makes this scene fun.
+        /// The one readout you get for free, because it is your own body and you would feel it.
+        ///
+        /// Everything about a <em>patient</em> costs an action to learn - you pick up the
+        /// scanner, you point it, and your hands are full while you do. Stamina is the
+        /// exception on purpose, and it is the only exception.
+        ///
+        /// Fades in when spent rather than popping, and is absent entirely at full, so walking
+        /// never feels rationed.
         /// </summary>
-        private void DrawLocker()
+        private void DrawStamina(PlayerNetworkSetup local, float cx, float cy)
         {
-            var local = PlayerNetworkSetup.Local;
-            if (local == null) return;
+            var loco = local.GetComponent<PlayerLocomotion>();
+            if (loco == null) return;
 
-            var role = local.GetComponent<PlayerRole>();
-            if (role == null) return;
+            float wanted = loco.Stamina >= 0.999f ? 0f : 1f;
+            _staminaFade = Mathf.MoveTowards(_staminaFade, wanted, Time.deltaTime * 3f);
+            if (_staminaFade <= 0.01f) return;
 
-            GUILayout.BeginArea(new Rect(12f, Screen.height - 148f, 200f, 136f), GUI.skin.box);
-            GUILayout.Label($"<b>LOCKER</b>  {role.Specialism}", _label);
+            const float width = 148f;
+            const float height = 6f;
+            var back = new Rect(cx - width * 0.5f, cy + 26f, width, height);
 
-            foreach (Specialism option in _specialisms)
-            {
-                if (option == role.Specialism) continue;
-                if (GUILayout.Button(option.ToString(), GUILayout.Height(20f)))
-                    role.Choose(option);
-            }
+            // Winded reads as a slow pulse, so you notice it without a word of text.
+            float pulse = loco.Winded ? 0.72f + Mathf.Sin(Time.time * 7f) * 0.28f : 1f;
 
-            GUILayout.EndArea();
+            GUI.color = new Color(0f, 0f, 0f, 0.5f * _staminaFade);
+            GUI.DrawTexture(new Rect(back.x - 1f, back.y - 1f, back.width + 2f, back.height + 2f),
+                            Texture2D.whiteTexture);
+
+            Color fill = loco.Winded ? new Color(0.88f, 0.33f, 0.28f)
+                       : loco.Stamina < 0.35f ? new Color(0.92f, 0.72f, 0.34f)
+                       : new Color(0.86f, 0.90f, 0.88f);
+
+            GUI.color = new Color(fill.r, fill.g, fill.b, 0.9f * _staminaFade * pulse);
+            GUI.DrawTexture(new Rect(back.x, back.y, back.width * Mathf.Clamp01(loco.Stamina), back.height),
+                            Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
-
-        private static readonly Specialism[] _specialisms =
-        {
-            Specialism.Vascular,
-            Specialism.Anaesthesia,
-            Specialism.Exostructure,
-            Specialism.Xenobiology,
-        };
 
         // ---------------------------------------------------------------- scanner
 
@@ -218,22 +143,15 @@ namespace Probation.Game
                 return;
             }
 
-            var role = local.GetComponent<PlayerRole>();
-            Specialism specialism = role != null ? role.Specialism : Specialism.None;
+            // Everything, to whoever is holding it. The asymmetry is not who you are - it is
+            // that there is one scanner, and holding it means not holding a scalpel.
+            string diagnosis = target.Species != null ? target.Species.diagnosisText : "unidentified";
 
             GUILayout.BeginArea(rect, GUI.skin.box);
             GUILayout.Label($"<b>SCANNER</b>   {target.State}", _label);
             GUILayout.Label($"heart rate   {target.HeartRate:0} bpm", _label);
-
-            GUILayout.Label(specialism == Specialism.Anaesthesia
-                ? $"pain state   <b>{(target.IsConscious ? "AWAKE - it can feel this" : "under")}</b>"
-                : "pain state   <i>anaesthesia only</i>", _label);
-
-            string diagnosis = target.Species != null ? target.Species.diagnosisText : "unidentified";
-            GUILayout.Label(specialism == Specialism.Xenobiology
-                ? $"diagnosis    <b>{diagnosis}</b>"
-                : "diagnosis    <i>xenobiology only</i>", _label);
-
+            GUILayout.Label($"pain state   <b>{(target.IsConscious ? "AWAKE - it can feel this" : "under")}</b>", _label);
+            GUILayout.Label($"diagnosis    <b>{diagnosis}</b>", _label);
             GUILayout.EndArea();
         }
 

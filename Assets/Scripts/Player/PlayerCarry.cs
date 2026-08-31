@@ -22,17 +22,21 @@ namespace Probation.Player
         [SerializeField] private Transform handAnchor;
 
         [Header("Tool hold")]
-        [Tooltip("Spring strength per kg of tool. Stiffer feels more precise, softer more comic.")]
-        [SerializeField] private float holdSpring = 300f;
-        [SerializeField] private float holdDamper = 30f;
-        [Tooltip("How hard a held tool rotates to match the hand.")]
-        [SerializeField] private float holdTorque = 25f;
-        [Tooltip("Drop the tool if something drags it further than this from your hand.")]
-        [SerializeField] private float dropDistance = 2f;
+        [Tooltip("Ceiling on how fast a held tool chases your hand. Lower feels heavier.")]
+        [SerializeField] private float maxCarrySpeed = 26f;
+        [Tooltip("How much mass eats into that ceiling. 0 makes every tool equally nimble.")]
+        [SerializeField] private float massDrag = 0.5f;
+        [SerializeField] private float maxCarrySpin = 32f;
+        [Tooltip("Extra push on release, on top of the speed it already had.")]
+        [SerializeField] private float throwBoost = 1.15f;
+        [Tooltip("Drop the tool if it somehow ends up further than this from your hand.")]
+        [SerializeField] private float dropDistance = 2.5f;
 
         [Header("Timing")]
         [Tooltip("Give up on a grab the host never confirmed.")]
         [SerializeField] private float grabTimeout = 1f;
+        [Tooltip("Hold Interact longer than this and letting go drops the item. A quicker tap keeps it.")]
+        [SerializeField] private float holdToCarrySeconds = 0.25f;
 
         public Transform Hand => handAnchor;
         public Vector3 HandPosition => handAnchor != null ? handAnchor.position : transform.position;
@@ -43,6 +47,10 @@ namespace Probation.Player
 
         private Rigidbody _carriedBody;
         private float _grabbedAt;
+        private float _pressedAt;
+
+        private Collider[] _ownColliders;
+        private readonly System.Collections.Generic.List<Collider> _ignored = new();
         private int _grabbedFrame = -1;
 
         private void Reset()
@@ -57,6 +65,8 @@ namespace Probation.Player
             if (input == null) input = GetComponent<PlayerInputReader>();
             if (interactor == null) interactor = GetComponent<PlayerInteractor>();
             if (locomotion == null) locomotion = GetComponent<PlayerLocomotion>();
+
+            _ownColliders = GetComponentsInChildren<Collider>(true);
         }
 
         // ---------------------------------------------------------------- input
@@ -65,13 +75,29 @@ namespace Probation.Player
         {
             if (!IsOwner || input == null) return;
 
-            // Grabbing arrives through PlayerInteractor -> Grabbable.Interact -> TryGrab.
-            // Grabbable.CanInteract returns false while carrying, so when your hands are full
-            // the interactor finds nothing and Interact means "let go" instead.
-            if (!input.InteractPressed) return;
-            if (Time.frameCount == _grabbedFrame) return;   // don't release on the grab frame
+            if (input.InteractPressed) _pressedAt = Time.time;
 
-            if (IsCarrying) Release();
+            // Two ways to let go, which between them cover how everyone expects this to work:
+            //
+            //   tap E            -> pick up and keep it, tap again to drop
+            //   hold E ... let go -> carry while held, drops the moment you release
+            //
+            // Grabbing itself arrives through PlayerInteractor -> Grabbable.Interact -> TryGrab.
+            // Grabbable.CanInteract is false while carrying, so with full hands the interactor
+            // finds nothing and Interact can only mean "let go".
+            if (!IsCarrying) return;
+
+            // Never on the frame we grabbed - the press that picked it up would drop it again.
+            if (Time.frameCount == _grabbedFrame) return;
+
+            if (input.InteractPressed)
+            {
+                Release();
+                return;
+            }
+
+            if (input.InteractReleased && Time.time - _pressedAt >= holdToCarrySeconds)
+                Release();
         }
 
         // ---------------------------------------------------------------- grab / release
@@ -83,6 +109,16 @@ namespace Probation.Player
             Carried = grabbable;
             _carriedBody = grabbable.GetComponent<Rigidbody>();
             _grabbedAt = Time.time;
+
+            if (_carriedBody != null)
+            {
+                // Stays a dynamic body throughout - that is the whole point. It just stops
+                // falling, and stops colliding with the person carrying it.
+                _carriedBody.angularVelocity = Vector3.zero;
+                _carriedBody.useGravity = false;
+                _carriedBody.interpolation = RigidbodyInterpolation.Interpolate;
+                IgnoreSelfCollision(true);
+            }
             _grabbedFrame = Time.frameCount;
 
             ApplyEncumbrance();
@@ -96,6 +132,8 @@ namespace Probation.Player
         public void Release()
         {
             if (Carried == null) return;
+
+            ReleaseRigid(_carriedBody);
 
             Carried.RequestReleaseRpc();
             Carried = null;
@@ -130,28 +168,94 @@ namespace Probation.Player
 
             if (_carriedBody == null) { Release(); return; }
 
-            Vector3 toHand = HandPosition - _carriedBody.worldCenterOfMass;
-            if (toHand.sqrMagnitude > dropDistance * dropDistance) { Release(); return; }
+            if ((HandPosition - _carriedBody.position).sqrMagnitude > dropDistance * dropDistance)
+            {
+                Release();
+                return;
+            }
 
-            float mass = _carriedBody.mass;
-            Vector3 force = toHand * (holdSpring * mass) - _carriedBody.linearVelocity * (holdDamper * mass);
-            _carriedBody.AddForce(force);
-
-            AlignToHand(_carriedBody);
+            TrackToHand();
         }
 
-        /// <summary>Torque the tool toward the hand's orientation without ever snapping it.</summary>
-        private void AlignToHand(Rigidbody body)
+        /// <summary>
+        /// Velocity tracking: set the velocity that lands the tool on your hand <em>this</em>
+        /// step, rather than pushing it in roughly the right direction and hoping.
+        ///
+        /// This is what the gravity gun and the physgun do, and what Unity's own XR toolkit
+        /// calls Velocity Tracking. An earlier version applied spring force toward the hand,
+        /// which is an oscillator chasing a moving target - it can only ever lag, and tuning
+        /// the spring only changes how it lags.
+        ///
+        /// The tool stays a real rigidbody throughout. Physics still sweeps it, so it is
+        /// blocked by walls rather than passing through them, and it still knocks things over.
+        ///
+        /// The speed ceiling is where weight comes from: a heavy instrument cannot keep up with
+        /// a fast turn, so it trails and swings behind you. That lag is wanted - it is the
+        /// difference between carrying a scalpel and carrying a bone saw.
+        /// </summary>
+        private void TrackToHand()
         {
-            if (handAnchor == null) return;
+            float step = Time.fixedDeltaTime;
+            if (step <= 0f || handAnchor == null) return;
 
-            Quaternion delta = handAnchor.rotation * Quaternion.Inverse(body.rotation);
+            float ceiling = maxCarrySpeed / Mathf.Max(1f, _carriedBody.mass * massDrag);
+
+            Vector3 wanted = (handAnchor.position - _carriedBody.position) / step;
+            _carriedBody.linearVelocity = Vector3.ClampMagnitude(wanted, ceiling);
+
+            Quaternion delta = handAnchor.rotation * Quaternion.Inverse(_carriedBody.rotation);
+
+            // Shortest path, or a nearly-aligned tool spins the long way round.
+            if (delta.w < 0f) delta = new Quaternion(-delta.x, -delta.y, -delta.z, -delta.w);
+
             delta.ToAngleAxis(out float angle, out Vector3 axis);
-            if (float.IsInfinity(axis.x)) return;
+            if (axis.sqrMagnitude < 0.0001f || float.IsNaN(axis.x) || float.IsInfinity(axis.x)) return;
             if (angle > 180f) angle -= 360f;
 
-            Vector3 target = axis.normalized * (angle * Mathf.Deg2Rad * holdTorque);
-            body.AddTorque(target - body.angularVelocity * (holdTorque * 0.1f), ForceMode.Acceleration);
+            Vector3 spin = axis.normalized * (angle * Mathf.Deg2Rad / step);
+            _carriedBody.angularVelocity = Vector3.ClampMagnitude(spin, maxCarrySpin);
+        }
+
+        /// <summary>
+        /// Hand it back. Velocity tracking means it is already moving at roughly hand speed, so
+        /// a throw falls out of the physics rather than being faked on release.
+        /// </summary>
+        private void ReleaseRigid(Rigidbody body)
+        {
+            IgnoreSelfCollision(false);
+            if (body == null) return;
+
+            body.useGravity = true;
+            body.linearVelocity *= throwBoost;
+        }
+
+        /// <summary>
+        /// Stop the thing in our hand from colliding with us, and only with us. It stays solid
+        /// against the ward, so a held scalpel still sweeps a tray off a bench - it just cannot
+        /// push the person holding it.
+        /// </summary>
+        private void IgnoreSelfCollision(bool ignore)
+        {
+            if (ignore)
+            {
+                _ignored.Clear();
+                if (Carried == null) return;
+                Carried.GetComponentsInChildren(true, _ignored);
+            }
+
+            if (_ownColliders == null) return;
+
+            foreach (var theirs in _ignored)
+            {
+                if (theirs == null) continue;
+                foreach (var ours in _ownColliders)
+                {
+                    if (ours == null) continue;
+                    Physics.IgnoreCollision(theirs, ours, ignore);
+                }
+            }
+
+            if (!ignore) _ignored.Clear();
         }
 
         private void ApplyEncumbrance()
@@ -162,6 +266,8 @@ namespace Probation.Player
 
         public override void OnNetworkDespawn()
         {
+            // Never leave a tool kinematic and floating because the holder disconnected.
+            ReleaseRigid(_carriedBody);
             Carried = null;
             _carriedBody = null;
         }

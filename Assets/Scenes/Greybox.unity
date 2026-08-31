@@ -603,6 +603,7 @@ MonoBehaviour:
   displayName: suture kit
   kind: 0
   toolId: suture kit
+  isMetal: 1
   encumbrance: 0.08
   haulSpring: 600
   haulDamper: 40
@@ -844,6 +845,7 @@ MonoBehaviour:
   displayName: patient
   kind: 1
   toolId: 
+  isMetal: 1
   encumbrance: 0.85
   haulSpring: 600
   haulDamper: 40
@@ -879,6 +881,8 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   species: {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
   startingHarm: 0
+  safeImpactSpeed: 3.5
+  harmPerImpactSpeed: 0.04
 --- !u!1 &334873518
 GameObject:
   m_ObjectHideFlags: 0
@@ -1238,6 +1242,7 @@ MonoBehaviour:
   displayName: forceps
   kind: 0
   toolId: forceps
+  isMetal: 1
   encumbrance: 0.05
   haulSpring: 600
   haulDamper: 40
@@ -1912,6 +1917,7 @@ MonoBehaviour:
   displayName: gurney
   kind: 1
   toolId: 
+  isMetal: 1
   encumbrance: 0.55
   haulSpring: 600
   haulDamper: 40
@@ -2485,6 +2491,7 @@ MonoBehaviour:
   displayName: bone saw
   kind: 0
   toolId: bone saw
+  isMetal: 1
   encumbrance: 0.25
   haulSpring: 600
   haulDamper: 40
@@ -2862,6 +2869,7 @@ MonoBehaviour:
   displayName: retractor
   kind: 0
   toolId: retractor
+  isMetal: 1
   encumbrance: 0.12
   haulSpring: 600
   haulDamper: 40
@@ -3239,6 +3247,7 @@ MonoBehaviour:
   displayName: scalpel
   kind: 0
   toolId: scalpel
+  isMetal: 1
   encumbrance: 0.05
   haulSpring: 600
   haulDamper: 40
@@ -3374,6 +3383,9 @@ GameObject:
   - component: {fileID: 1027645594}
   - component: {fileID: 1027645596}
   - component: {fileID: 1027645595}
+  - component: {fileID: 1027645599}
+  - component: {fileID: 1027645598}
+  - component: {fileID: 1027645597}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -3550,7 +3562,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.SurgeryHud
   patientRange: 4
-  noticeSeconds: 5
   scannerRange: 9
 --- !u!114 &1027645596
 MonoBehaviour:
@@ -3566,9 +3577,70 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ShiftDirector
   ShowTopMostFoldoutHeaderGroup: 1
   shiftSeconds: 390
+  coverUpSeconds: 20
   reviewSeconds: 20
+  baseQuota: 3
+  quotaGrowth: 1
+  maxStrikes: 3
   shiftsPerWeek: 7
   hospitalDeathLimit: 8
+  startHour: 20
+  shiftHours: 8
+--- !u!114 &1027645597
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1027645586}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61c09f9f6f4c0c843aa55b92484864ac, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ComplicationDirector
+  ShowTopMostFoldoutHeaderGroup: 1
+  hiccupGapMin: 18
+  hiccupGapMax: 34
+  codeGapMin: 70
+  codeGapMax: 120
+  codeBleedRate: 0.05
+--- !u!114 &1027645598
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1027645586}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d2585d32930c1134980a8d7f2df820f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.PatientIntake
+  ShowTopMostFoldoutHeaderGroup: 1
+  firstArrivalAfter: 6
+  slowestGap: 26
+  fastestGap: 9
+  leaveBedsFree: 1
+--- !u!114 &1027645599
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1027645586}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe9c54ea0c7ba09408f3a7e99d2c0b55, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ShiftHud
+  clockRadius: 46
+  faceColour: {r: 0.06, g: 0.09, b: 0.09, a: 0.85}
+  rimColour: {r: 0.36, g: 0.78, b: 0.72, a: 0.9}
+  handColour: {r: 0.9, g: 0.95, b: 0.93, a: 0.95}
+  sweepColour: {r: 0.36, g: 0.78, b: 0.72, a: 0.3}
+  okColour: {r: 0.45, g: 0.88, b: 0.55, a: 1}
+  dueColour: {r: 0.95, g: 0.72, b: 0.35, a: 1}
+  cardSeconds: 3.5
 --- !u!1 &1237423425
 GameObject:
   m_ObjectHideFlags: 0
@@ -3915,6 +3987,7 @@ MonoBehaviour:
   displayName: vitals monitor
   kind: 1
   toolId: 
+  isMetal: 1
   encumbrance: 0.3
   haulSpring: 600
   haulDamper: 40
@@ -4451,6 +4524,7 @@ MonoBehaviour:
   displayName: patient
   kind: 1
   toolId: 
+  isMetal: 1
   encumbrance: 0.85
   haulSpring: 600
   haulDamper: 40
@@ -4486,6 +4560,8 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   species: {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
   startingHarm: 0
+  safeImpactSpeed: 3.5
+  harmPerImpactSpeed: 0.04
 --- !u!1 &1614479709
 GameObject:
   m_ObjectHideFlags: 0
@@ -4718,6 +4794,7 @@ MonoBehaviour:
   displayName: scanner
   kind: 0
   toolId: scanner
+  isMetal: 1
   encumbrance: 0.06
   haulSpring: 600
   haulDamper: 40
@@ -5157,6 +5234,7 @@ MonoBehaviour:
   displayName: retractor
   kind: 0
   toolId: retractor
+  isMetal: 1
   encumbrance: 0.12
   haulSpring: 600
   haulDamper: 40

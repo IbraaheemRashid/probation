@@ -445,3 +445,101 @@ threaded through from phase 2.
 - Patient spawning and intake; the scene has one hand-placed patient
 - Write-ups and the Orderly demotion
 - Voice
+
+---
+
+# Cut: specialisms, lockers, clock-in
+
+Removed deliberately. The GDD had four specialisms granting private information, chosen at a
+locker during a clock-in phase. All three are gone.
+
+**Why.** None of the games this is chasing have classes - Lethal Company, R.E.P.O., PEAK and
+Meccha Chameleon all let everyone do everything. Classes add a failure mode those games avoid
+on purpose: turn up without an anaesthetist and the lobby is blocked before it starts. That is
+the opposite of what four friends want from an evening.
+
+**What replaced it.** The thing specialisms protected - *the only way through is to talk* - now
+comes from **instruments**. There is one scanner. Whoever holds it can read the patient's state,
+pain and diagnosis, and is therefore not holding a scalpel. Same asymmetry, sourced from an
+object rather than a character sheet, which is better in every direction:
+
+- no lobby composition problem
+- it can be dropped, taken, lost, or hidden by somebody being a nuisance
+- carrying it costs you a hand, so scanning is a real decision
+- it needs no UI to explain and no phase to assign
+
+Steps still gate on `handsRequired`, which is what makes co-op structural. They no longer gate
+on who you are.
+
+The shift now begins immediately: `Shift -> CoverUp -> Review -> next night`.
+
+---
+
+# The loop, rebuilt for pressure
+
+Two problems the research surfaced, and what was done about them.
+
+## 1. There was no reason to hurry
+
+Lethal Company's engine is the quota - the clock is only frightening because you owe something.
+We had a clock and nothing behind it: you could stand still for the whole night and it ended
+identically.
+
+**Quota.** Discharge N patients alive, rising each night (`baseQuota` + `quotaGrowth`). Miss it
+and you take a strike; three strikes or eight deaths and the ward closes.
+
+**Discharge is physical.** Treating is not enough - the patient has to be wheeled to the
+discharge bay, and the dead have to go to the morgue. This is what the heavy-haul system was
+always for, and it makes the last thirty seconds of a night a scramble.
+
+## 2. The ward was under-loaded
+
+Overcooked's postmortem names the failure: players settle into comfortable roles and stop
+talking. Their three fixes, applied here:
+
+**Task overload.** Six beds, eight pooled patients, intake tightening from a 26s gap to 9s
+across the night. Beds are positions and patients are objects that move between them, so a
+finished patient still occupies a bed until somebody physically moves them - the ward silting
+up with bodies nobody has wheeled out *is* the pressure.
+
+**Time delays.** `Operation` no longer wipes progress when you walk away. Half-finished work is
+picked up by whoever arrives next, which is what lets one intern run four beds instead of
+standing at one. A deteriorating patient still undoes it slowly, so abandoning a bleeder
+remains a decision with a cost.
+
+**Disruptions.** `ComplicationDirector` fires Hiccups (a bleed opens on somebody nobody is
+watching) and Codes (a patient crashes and needs hands now), seeded per night so two groups can
+compare the same night.
+
+## The washing up
+
+`Steriliser`. A used instrument is soiled, and a soiled instrument fails procedure steps until
+somebody has walked it to the steriliser. This is Overcooked's dirty plates: a chore that never
+stops, forces people across each other's paths, and makes "somebody grabbed the wrong scalpel"
+something that emerges rather than something the game punishes.
+
+## Playing a full run
+
+Nights are 3.5 minutes while the loop is being tuned, so seven of them is about half an hour.
+At `WEEK OVER` the host presses **R** to start a new week without re-hosting.
+
+---
+
+# Information costs an action
+
+A design rule, not a UI preference.
+
+**Anything about a patient must be looked up.** Condition, heart rate, whether they are awake,
+what is actually wrong with them - none of it is on screen by default. You pick up the scanner,
+you point it at somebody, and your hands are full while you do. Whoever knows is therefore not
+the person operating, which is why they have to say it out loud.
+
+**Stamina is the one exception**, because it is your own body and you would feel it. It fades in
+only once spent and is absent at full, so ordinary movement never feels rationed.
+
+The operation panel is not an exception: it shows which tool goes where and how far through the
+step you are - procedure information, not patient information. It never leaks condition.
+
+This is why the monitor cart matters. It is the only way to know a patient is deteriorating
+without standing over them, there is one of it, and it has to be wheeled to whoever you have
+decided is worth watching.

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Probation.Player;
 using UnityEngine;
 
 namespace Probation.Surgery
@@ -26,8 +25,6 @@ namespace Probation.Surgery
         public string targetSite = "torso";
         [Tooltip("Distinct interns who must hold a correct tool at the site at once.")]
         [Min(1)] public int handsRequired = 1;
-        [Tooltip("Optional: only this specialism can complete the step at all.")]
-        public Specialism requiredSpecialism = Specialism.None;
 
         [Header("Tolerance band")]
         [Tooltip("How near the site the tool must be. The host judges slightly stale positions, so exact contact tests feel broken to everyone who is not hosting.")]
@@ -43,6 +40,10 @@ namespace Probation.Surgery
         public float bleedRatePerSecond = 0.02f;
         [Tooltip("Completing this step closes any open bleed.")]
         public bool closesBleed;
+        [Tooltip("Completing this step puts the patient under.")]
+        public bool sedates;
+        [Tooltip("Doing this to a patient who is still awake hurts them, badly.")]
+        public bool requiresUnconscious = true;
     }
 
     /// <summary>

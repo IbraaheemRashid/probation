@@ -43,6 +43,8 @@ namespace Probation.Interaction
         [SerializeField] private GrabKind kind = GrabKind.Tool;
         [Tooltip("What procedure steps ask for by name, e.g. scalpel, forceps, retractor.")]
         [SerializeField] private string toolId = "";
+        [Tooltip("Some species are harmed by metal. The manual does not mention this.")]
+        [SerializeField] private bool isMetal = true;
 
         [Header("Handling")]
         [Tooltip("How much this slows you down while carried. 1 = both hands on a patient.")]
@@ -58,9 +60,34 @@ namespace Probation.Interaction
         public string DisplayName => displayName;
         public GrabKind Kind => kind;
         public string ToolId => toolId;
+        public bool IsMetal => isMetal;
+
+        /// <summary>
+        /// Used, and not yet through the steriliser. A dirty instrument fails procedure steps -
+        /// this is the ward's washing up, and it is the chore that keeps everybody moving.
+        /// </summary>
+        public bool IsDirty => _dirty.Value;
+
+        private readonly NetworkVariable<bool> _dirty = new();
+
+        public void Soil()
+        {
+            if (IsServer && !string.IsNullOrEmpty(toolId)) _dirty.Value = true;
+        }
+
+        public void Clean()
+        {
+            if (IsServer) _dirty.Value = false;
+        }
 
         /// <summary>Tools only: the client holding this, or ulong.MaxValue.</summary>
         public ulong HeldBy => _heldBy.Value;
+
+        /// <summary>
+        /// Whoever most recently had hands on this. Survives them letting go, because the
+        /// consequences of shoving something usually arrive after you have let go of it.
+        /// </summary>
+        public ulong LastHandledBy { get; private set; } = ulong.MaxValue;
         public float Encumbrance => encumbrance;
         public float HaulBreakDistance => haulBreakDistance;
 
@@ -91,8 +118,26 @@ namespace Probation.Interaction
 
         private void Awake() => _rb = GetComponent<Rigidbody>();
 
+        /// <summary>
+        /// While somebody else holds this, their NetworkTransform is the authority on where it
+        /// is. Leaving it dynamic here means the local solver and the network state both write
+        /// the same transform every tick, which reads as jitter.
+        /// </summary>
+        private void RefreshRemoteSimulation()
+        {
+            if (_rb == null || kind != GrabKind.Tool) return;
+
+            bool someoneElseHasIt = IsHeld && !IsOwner;
+            if (_rb.isKinematic == someoneElseHasIt) return;
+
+            _rb.isKinematic = someoneElseHasIt;
+        }
+
         public override void OnNetworkSpawn()
         {
+            _heldBy.OnValueChanged += (_, __) => RefreshRemoteSimulation();
+            RefreshRemoteSimulation();
+
             // A client that drops mid-grab would otherwise leave a tool permanently "held" by
             // nobody, or a phantom spring pulling from where they used to be standing.
             if (IsServer) NetworkManager.OnClientDisconnectCallback += ForceRelease;
@@ -130,6 +175,7 @@ namespace Probation.Interaction
             {
                 if (IsHeld) return;                       // somebody beat them to it
                 _heldBy.Value = clientId;
+                LastHandledBy = clientId;
                 NetworkObject.ChangeOwnership(clientId);
                 IncidentLog.Record(clientId, $"picked up the {displayName}");
                 return;
@@ -140,6 +186,7 @@ namespace Probation.Interaction
             var carry = CarryOf(clientId);
             if (carry == null) return;
 
+            LastHandledBy = clientId;
             _hauls.Add(new Haul(clientId, carry, localPoint));
         }
 

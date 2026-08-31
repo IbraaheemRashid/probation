@@ -48,6 +48,12 @@ namespace Probation.EditorTools
             if (!SetProjectSetting("ProjectSettings/TimeManager.asset", "Fixed Timestep", 1f / 60f))
                 Debug.LogWarning("[Probation] Could not write Fixed Timestep. Set it to 0.0166 in Project Settings > Time.");
 
+            // Real gravity is 9.81 and it feels like the moon in first person. Everything -
+            // players, dropped instruments, thrown tools, patients landing on beds - reads as
+            // floaty until this is roughly two and a half times life.
+            if (!SetGravity(GameGravity))
+                Debug.LogWarning("[Probation] Could not write gravity. Set Y to -24 in Project Settings > Physics.");
+
             // Interns should not slide down ramps they are standing still on.
             Physics.defaultSolverIterations = 8;
 
@@ -108,7 +114,6 @@ namespace Probation.EditorTools
             var locomotion = root.AddComponent<PlayerLocomotion>();
             var interactor = root.AddComponent<PlayerInteractor>();
             var carry = root.AddComponent<PlayerCarry>();
-            root.AddComponent<PlayerRole>();
 
             var inputAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
             if (inputAsset == null)
@@ -233,12 +238,6 @@ namespace Probation.EditorTools
                         ("locomotion", contents.GetComponent<PlayerLocomotion>()),
                         ("handAnchor", handAnchor));
                     Debug.Log("[Probation] Added missing PlayerCarry to the Player prefab.");
-                }
-
-                if (contents.GetComponent<PlayerRole>() == null)
-                {
-                    contents.AddComponent<PlayerRole>();
-                    Debug.Log("[Probation] Added missing PlayerRole to the Player prefab.");
                 }
 
                 var cursorLock = contents.GetComponent<CursorLock>();
@@ -395,26 +394,28 @@ namespace Probation.EditorTools
 
             var root = new GameObject("Props");
 
-            // A surface to work over, so tools are picked up off something rather than the floor.
-            var table = Box("Operating table", new Vector3(3f, 0.45f, 6f), new Vector3(2.2f, 0.9f, 1.1f));
-            table.transform.SetParent(root.transform, true);
+            // A prep bench the instruments start on. The beds themselves come from step 7.
+            var bench = Box("Prep bench", new Vector3(0f, 0.45f, -4.5f), new Vector3(5f, 0.9f, 1.1f));
+            bench.transform.SetParent(root.transform, true);
 
             // Tools: light, precise, one pair of hands each. Ownership follows the holder.
-            Tool("Scalpel",   new Vector3(2.4f, 1.0f, 6.0f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
-            Tool("Forceps",   new Vector3(2.8f, 1.0f, 6.0f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+            Tool("Scalpel",    new Vector3(-2.2f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+            Tool("Forceps",    new Vector3(-1.5f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+            Tool("Forceps",    new Vector3(-0.9f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+
             // Two retractors, not one two-handed retractor. A step that needs two pairs of
             // hands is two owner-authoritative objects; one object with two owners is the trap.
-            Tool("Retractor", new Vector3(3.2f, 1.0f, 6.0f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
-            Tool("Retractor", new Vector3(3.5f, 1.0f, 6.3f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
-            Tool("Bone saw",  new Vector3(3.9f, 1.0f, 6.0f), new Vector3(0.10f, 0.06f, 0.40f), 3.0f, 0.25f);
-            Tool("Suture kit", new Vector3(4.2f, 1.0f, 6.0f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
+            Tool("Retractor",  new Vector3(-0.2f, 1.0f, -4.5f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
+            Tool("Retractor",  new Vector3(0.4f, 1.0f, -4.5f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
 
-            // Xenobiology's instrument. Point it at a patient to read them - and note there is
-            // one of it, so whoever is holding it is not holding anything else.
-            Tool("Scanner", new Vector3(2.0f, 1.0f, 6.4f), new Vector3(0.10f, 0.04f, 0.20f), 0.5f, 0.06f);
+            Tool("Suture kit", new Vector3(1.1f, 1.0f, -4.5f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
+            Tool("Suture kit", new Vector3(1.7f, 1.0f, -4.5f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
+            Tool("Gas rig",    new Vector3(2.4f, 1.0f, -4.5f), new Vector3(0.16f, 0.10f, 0.16f), 2.0f, 0.15f);
 
-            // Heavy: host keeps authority, any number of hands, latency reads as weight.
-            Heavy("Gurney", new Vector3(6.5f, 0.6f, 6.0f), new Vector3(1.9f, 0.6f, 0.85f), 45f, 0.55f);
+            // One scanner. Whoever is holding it knows what is wrong and cannot operate.
+            Tool("Scanner",    new Vector3(-2.9f, 1.0f, -4.5f), new Vector3(0.10f, 0.04f, 0.20f), 0.5f, 0.06f);
+
+            Heavy("Gurney", new Vector3(4.5f, 0.6f, -3f), new Vector3(1.9f, 0.6f, 0.85f), 45f, 0.55f);
 
             foreach (var g in Object.FindObjectsByType<Grabbable>(FindObjectsSortMode.None))
                 if (g.transform.parent == null) g.transform.SetParent(root.transform, true);
@@ -460,8 +461,8 @@ namespace Probation.EditorTools
 
         private const string SurgeryAssetDir = "Assets/Surgery";
 
-        [MenuItem("Probation/Setup/7 - Add Patient and Procedures", priority = 6)]
-        public static void AddPatientAndProcedures()
+        [MenuItem("Probation/Setup/7 - Build The Ward", priority = 6)]
+        public static void BuildTheWard()
         {
             if (Object.FindFirstObjectByType<NetworkManager>() == null)
             {
@@ -470,34 +471,109 @@ namespace Probation.EditorTools
             }
 
             System.IO.Directory.CreateDirectory(SurgeryAssetDir);
-
             var species = BuildSpecies();
+            var triage = BuildTriage();
             var extraction = BuildExtraction();
-            var suture = BuildSuture();          // phase 5: content, not code
             AssetDatabase.SaveAssets();
 
-            foreach (var name in new[] { "Patient (extraction)", "Patient (suture)" })
+            var old = GameObject.Find("Ward");
+            if (old != null) Object.DestroyImmediate(old);
+            foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
+                Object.DestroyImmediate(patient.gameObject);
+
+            var ward = new GameObject("Ward");
+
+            // Six beds in two rows, far enough apart that crossing the ward costs you time.
+            for (int i = 0; i < 6; i++)
             {
-                var old = GameObject.Find(name);
-                if (old != null) Object.DestroyImmediate(old);
+                float x = -6f + i % 3 * 6f;
+                float z = 4f + i / 3 * 7f;
+                Bed(ward.transform, i + 1, new Vector3(x, 0f, z));
             }
 
-            // Extraction has a two-handed step, so it cannot be finished alone - that is the
-            // design working, not a bug. The suture patient is every-step-solo so the whole
-            // loop can be verified by one person before anyone else is in the room.
-            BuildPatient("Patient (extraction)", new Vector3(3f, 1.15f, 6f), species, extraction);
-            BuildPatient("Patient (suture)", new Vector3(0.4f, 1.15f, 6f), species, suture);
+            // More bodies than beds, so intake never runs dry. Half want the quick job, half
+            // want the two-handed one - a ward that is all one or all the other has no triage
+            // decision in it.
+            for (int i = 0; i < 8; i++)
+                BuildPatient(ward.transform, $"Patient {i + 1}", species, i % 2 == 0 ? triage : extraction);
 
-            var table2 = Box("Operating table 2", new Vector3(0.4f, 0.45f, 6f), new Vector3(2.2f, 0.9f, 1.1f));
-            table2.transform.SetParent(GameObject.Find("Props")?.transform, true);
+            Zone(ward.transform, "Discharge bay", new Vector3(10f, 1f, 12f), WardZoneKind.Discharge);
+            Zone(ward.transform, "Morgue", new Vector3(-10f, 1f, 12f), WardZoneKind.Morgue);
+            BuildSteriliser(ward.transform, new Vector3(0f, 0.6f, -2f));
 
-            // One monitor, two tables. Wheel it to whoever needs watching - and notice that you
-            // cannot watch both at once.
-            BuildMonitor(new Vector3(1.7f, 0.55f, 7.4f));
+            // PEAK's backpack, as furniture. Instruments sit on it, you shove it to whichever
+            // bed is on fire, and anybody can shove it somewhere else. It extends what the team
+            // can carry without ever giving anybody an inventory.
+            InstrumentTray(ward.transform, new Vector3(-2.5f, 0.55f, 0f));
+
+            // One monitor, six beds. Whoever wants a heartbeat has to go and fetch it.
+            BuildMonitor(new Vector3(2.5f, 0.55f, 0f));
+            var monitor = GameObject.Find("Vitals monitor");
+            if (monitor != null) monitor.transform.SetParent(ward.transform, true);
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             AssetDatabase.SaveAssets();
-            Debug.Log($"[Probation] Patient and procedures created in {SurgeryAssetDir}.");
+            Debug.Log("[Probation] Ward built: 6 beds, 8 patients, discharge, morgue, steriliser.");
+        }
+
+        private static void Bed(Transform parent, int number, Vector3 position)
+        {
+            var table = Box($"Bed {number}", position + Vector3.up * 0.45f, new Vector3(1.0f, 0.9f, 2.1f));
+            table.transform.SetParent(parent, true);
+
+            var surface = new GameObject("Surface");
+            surface.transform.SetParent(table.transform, false);
+            surface.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+
+            var bed = table.AddComponent<WardBed>();
+            SetRefs(bed, ("surface", surface.transform));
+        }
+
+        private static void Zone(Transform parent, string name, Vector3 position, WardZoneKind kind)
+        {
+            var go = Box(name, position, new Vector3(4f, 2f, 4f));
+            go.transform.SetParent(parent, true);
+
+            // A doorway you push a gurney through, not a wall you bump into.
+            var collider = go.GetComponent<BoxCollider>();
+            collider.isTrigger = true;
+
+            var zone = go.AddComponent<WardZone>();
+            var so = new SerializedObject(zone);
+            so.FindProperty("kind").enumValueIndex = (int)kind;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void InstrumentTray(Transform parent, Vector3 position)
+        {
+            var go = Box("Instrument tray", position, new Vector3(1.1f, 0.75f, 0.7f));
+            go.transform.SetParent(parent, true);
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 18f;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            go.AddComponent<NetworkObject>();
+
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = "instrument tray";
+            so.FindProperty("toolId").stringValue = "";
+            so.FindProperty("kind").enumValueIndex = (int)GrabKind.Heavy;
+            so.FindProperty("encumbrance").floatValue = 0.35f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ConfigureTransform(go.AddComponent<NetworkTransform>(),
+                               localSpace: false, syncScale: false, ownerAuthority: false);
+        }
+
+        private static void BuildSteriliser(Transform parent, Vector3 position)
+        {
+            var go = Box("Steriliser", position, new Vector3(1.6f, 1.2f, 1.0f));
+            go.transform.SetParent(parent, true);
+            go.GetComponent<BoxCollider>().isTrigger = true;
+            go.AddComponent<Steriliser>();
         }
 
         private static Species BuildSpecies()
@@ -514,57 +590,55 @@ namespace Probation.EditorTools
             return species;
         }
 
-        private static Procedure BuildExtraction()
+        /// <summary>The quick job. Most patients want this - it is the ward's baseline tempo.</summary>
+        private static Procedure BuildTriage()
         {
-            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Extraction.asset");
-            procedure.displayName = "extraction";
-            procedure.description = "Get the thing out without letting the patient empty itself.";
+            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Triage.asset");
+            procedure.displayName = "triage";
+            procedure.description = "Put them under, close them up, get them out.";
             procedure.steps = new System.Collections.Generic.List<ProcedureStep>
             {
-                new() { displayName = "Open the seam", requiredToolId = "scalpel", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 1.5f, tolerance = 0.35f,
-                        wrongToolHarm = 0.12f, opensBleed = true, bleedRatePerSecond = 0.02f },
-
-                // Two hands means two interns each holding a retractor - two owner-authoritative
-                // objects, never one object with two owners.
-                new() { displayName = "Hold the seam open", requiredToolId = "retractor", targetSite = "torso",
-                        handsRequired = 2, holdSeconds = 2f, tolerance = 0.4f, wrongToolHarm = 0.1f },
-
-                new() { displayName = "Extract the foreign body", requiredToolId = "forceps", targetSite = "cavity",
-                        handsRequired = 1, holdSeconds = 2.5f, tolerance = 0.3f, wrongToolHarm = 0.2f },
-
-                new() { displayName = "Close the incision", requiredToolId = "suture kit", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 3f, tolerance = 0.35f,
-                        wrongToolHarm = 0.15f, closesBleed = true },
+                new() { displayName = "Sedate", requiredToolId = "gas rig", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 1.6f, tolerance = 0.45f,
+                        requiresUnconscious = false, wrongToolHarm = 0.05f, sedates = true },
+                new() { displayName = "Close them up", requiredToolId = "suture kit", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 2.4f, tolerance = 0.4f,
+                        wrongToolHarm = 0.12f, closesBleed = true },
             };
             EditorUtility.SetDirty(procedure);
             return procedure;
         }
 
         /// <summary>
-        /// Phase 5 exists to prove the framework generalises. If a second procedure is anything
-        /// more than a new asset and a new tool, the framework grew wrong and wants cutting back.
+        /// The one that needs somebody else. handsRequired is what makes co-op structural
+        /// rather than decorative, and the scene ships two retractors because two hands means
+        /// two owner-authoritative objects, never one object with two owners.
         /// </summary>
-        private static Procedure BuildSuture()
+        private static Procedure BuildExtraction()
         {
-            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Suture.asset");
-            procedure.displayName = "suture";
-            procedure.description = "Close what somebody else opened.";
+            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Extraction.asset");
+            procedure.displayName = "extraction";
+            procedure.description = "Get the thing out. You cannot do it alone.";
             procedure.steps = new System.Collections.Generic.List<ProcedureStep>
             {
-                new() { displayName = "Trace the seam", requiredToolId = "suture kit", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 4f, tolerance = 0.3f, wrongToolHarm = 0.18f },
-                new() { displayName = "Tie off", requiredToolId = "forceps", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 1.5f, tolerance = 0.3f,
-                        wrongToolHarm = 0.1f, closesBleed = true },
+                new() { displayName = "Sedate", requiredToolId = "gas rig", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 1.6f, tolerance = 0.45f,
+                        requiresUnconscious = false, wrongToolHarm = 0.05f, sedates = true },
+                new() { displayName = "Hold the seam open", requiredToolId = "retractor", targetSite = "torso",
+                        handsRequired = 2, holdSeconds = 2f, tolerance = 0.5f,
+                        wrongToolHarm = 0.1f, opensBleed = true, bleedRatePerSecond = 0.02f },
+                new() { displayName = "Extract and close", requiredToolId = "forceps", targetSite = "cavity",
+                        handsRequired = 1, holdSeconds = 2.4f, tolerance = 0.4f,
+                        wrongToolHarm = 0.18f, closesBleed = true },
             };
             EditorUtility.SetDirty(procedure);
             return procedure;
         }
 
-        private static void BuildPatient(string name, Vector3 position, Species species, Procedure procedure)
+        private static void BuildPatient(Transform parent, string name, Species species, Procedure procedure)
         {
-            var go = Box(name, position, new Vector3(0.55f, 0.35f, 1.7f));
+            var go = Box(name, new Vector3(0f, -40f, 0f), new Vector3(0.55f, 0.35f, 1.7f));
+            go.transform.SetParent(parent, true);
 
             var body = go.AddComponent<Rigidbody>();
             body.mass = 70f;
@@ -674,6 +748,9 @@ namespace Probation.EditorTools
             added += Ensure<NetworkDiagnostics>(go);
             added += Ensure<ShiftDirector>(go);
             added += Ensure<SurgeryHud>(go);
+            added += Ensure<ShiftHud>(go);
+            added += Ensure<PatientIntake>(go);
+            added += Ensure<ComplicationDirector>(go);
             added += Ensure<SteamManager>(go);
             added += Ensure<SteamLobbyBootstrap>(go);
             added += Ensure<FacepunchTransport>(go);
@@ -706,7 +783,6 @@ namespace Probation.EditorTools
                 foreach (var (type, label) in new (System.Type, string)[]
                 {
                     (typeof(PlayerCarry), nameof(PlayerCarry)),
-                    (typeof(PlayerRole), nameof(PlayerRole)),
                     (typeof(CursorLock), nameof(CursorLock)),
                     (typeof(PlayerNetworkSetup), nameof(PlayerNetworkSetup)),
                 })
@@ -715,6 +791,15 @@ namespace Probation.EditorTools
                     Debug.LogError($"[Verify] Player prefab is missing {label}. Run step 4.");
                     problems++;
                 }
+            }
+
+            int beds = Object.FindObjectsByType<WardBed>(FindObjectsSortMode.None).Length;
+            int zones = Object.FindObjectsByType<WardZone>(FindObjectsSortMode.None).Length;
+            int sterilisers = Object.FindObjectsByType<Steriliser>(FindObjectsSortMode.None).Length;
+            if (beds == 0 || zones < 2 || sterilisers == 0)
+            {
+                Debug.LogWarning($"[Verify] Ward incomplete: {beds} beds, {zones} zones, {sterilisers} sterilisers. Run step 7.");
+                problems++;
             }
 
             int patients = Object.FindObjectsByType<Patient>(FindObjectsSortMode.None).Length;
@@ -729,9 +814,13 @@ namespace Probation.EditorTools
 
             PutGreyboxFirstInBuild();
 
+            SetProjectSetting("ProjectSettings/TimeManager.asset", "Fixed Timestep", 1f / 60f);
+            SetGravity(GameGravity);
+            if (prefab != null) TuneLocomotion();
+
             if (added > 0) EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
 
-            Debug.Log($"[Verify] {patients} patients, {monitors} monitors, {tools} tools. " +
+            Debug.Log($"[Verify] {beds} beds, {patients} patients, {monitors} monitors, {tools} tools. " +
                       $"Added {added} missing component(s), {problems} problem(s) needing a setup step. " +
                       (added > 0 ? "SAVE THE SCENE." : "Nothing to add."));
         }
@@ -832,6 +921,71 @@ namespace Probation.EditorTools
             if (prop == null) return false;
             prop.objectReferenceValue = value;
             return true;
+        }
+
+        /// <summary>Game gravity, not Earth gravity. See the note in ConfigureProject.</summary>
+        private const float GameGravity = -24f;
+
+        private static bool SetGravity(float y)
+        {
+            var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/DynamicsManager.asset");
+            if (assets == null || assets.Length == 0) return false;
+
+            var so = new SerializedObject(assets[0]);
+            var prop = so.FindProperty("m_Gravity");
+            if (prop == null) return false;
+
+            prop.vector3Value = new Vector3(0f, y, 0f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites movement tuning onto the existing Player prefab. Changing the defaults in
+        /// PlayerLocomotion.cs does nothing to a prefab that already exists - its values were
+        /// serialised when it was built, which is why stale tuning survives a code change.
+        /// </summary>
+        private static void TuneLocomotion()
+        {
+            var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            try
+            {
+                var locomotion = contents.GetComponent<PlayerLocomotion>();
+                if (locomotion == null) return;
+
+                var so = new SerializedObject(locomotion);
+                void Set(string field, float value)
+                {
+                    var prop = so.FindProperty(field);
+                    if (prop != null) prop.floatValue = value;
+                }
+
+                // Faster, because a six bed ward is a lot of floor to cross.
+                Set("walkSpeed", 4.2f);
+                Set("sprintSpeed", 6.8f);
+                Set("crouchSpeed", 1.8f);
+
+                // Snappier starts and stops. Most of "floaty" is really "slow to change".
+                Set("groundAcceleration", 65f);
+                Set("airAcceleration", 14f);
+
+                // The ride spring has to hold more weight now gravity is stronger, and the
+                // damper tracks it - critical damping is about 2*sqrt(spring * mass).
+                Set("rideSpring", 45000f);
+                Set("rideDamper", 3600f);
+
+                // Base gravity does the work now, so this stops being a sledgehammer.
+                Set("fallGravityMultiplier", 1.25f);
+                Set("jumpHeight", 0.85f);
+
+                so.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.SaveAsPrefabAsset(contents, PlayerPrefabPath);
+                Debug.Log("[Probation] Movement retuned on the Player prefab.");
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(contents);
+            }
         }
 
         private static bool SetProjectSetting(string assetPath, string propertyName, float value)

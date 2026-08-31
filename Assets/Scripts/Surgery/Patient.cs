@@ -40,9 +40,8 @@ namespace Probation.Surgery
         public Species Species => species;
 
         /// <summary>
-        /// True pain and consciousness state. Replicated to everyone but only *shown* to the
-        /// anaesthetist - see PlayerRole. Hiding it properly would need targeted RPCs, which is
-        /// not worth it against four friends who could just look at each other's screens.
+        /// True pain and consciousness state. Readable only through the scanner, which is one
+        /// object that one person has to be holding.
         /// </summary>
         public bool IsConscious => _conscious.Value;
 
@@ -58,16 +57,53 @@ namespace Probation.Surgery
             All.Add(this);
             _state.OnValueChanged += (_, next) => StateChanged?.Invoke(next);
 
+            // Everybody starts off the ward. Intake decides who comes in and when.
+            if (IsServer) transform.position = HoldingPosition;
+
             if (!IsServer) return;
             _harm.Value = Mathf.Clamp01(startingHarm);
             _heartRate.Value = species != null ? species.restingHeartRate : 70f;
+
+            // Patients arrive awake. Somebody has to put them under, and if nobody does then
+            // every step of the operation is performed on a conscious alien.
+            _conscious.Value = true;
         }
 
         public override void OnNetworkDespawn() => All.Remove(this);
 
+        [Header("Handling")]
+        [Tooltip("Impacts slower than this are free. Above it, carelessness costs the patient.")]
+        [SerializeField] private float safeImpactSpeed = 3.5f;
+        [Tooltip("Harm per m/s of impact over the safe speed.")]
+        [SerializeField] private float harmPerImpactSpeed = 0.04f;
+
+        /// <summary>
+        /// The single thing that makes hauling a patient a skill rather than a walk.
+        ///
+        /// R.E.P.O.'s valuables lose money when you bump them, and that one rule is what turns
+        /// carrying a piano into gameplay. Ours lose blood. Without it you can ram a bleeding
+        /// alien through three doorframes at a sprint and the game does not care.
+        /// </summary>
+        private void OnCollisionEnter(Collision collision)
+        {
+            if (!IsServer || IsDead || HasLeft) return;
+
+            float speed = collision.relativeVelocity.magnitude;
+            if (speed <= safeImpactSpeed) return;
+
+            var grabbable = GetComponent<Interaction.Grabbable>();
+            ulong blame = grabbable != null ? grabbable.LastHandledBy : ulong.MaxValue;
+
+            ApplyHarmInternal((speed - safeImpactSpeed) * harmPerImpactSpeed, blame,
+                              blame == ulong.MaxValue ? null : "slammed a patient into something");
+
+            if (speed > safeImpactSpeed * 2f)
+                ShiftDirector.Instance?.Announce("Handle them gently.");
+        }
+
         private void Update()
         {
-            if (!IsServer || IsDead) return;
+            if (!IsServer || IsDead || HasLeft) return;
 
             if (_bleedRate > 0f)
                 ApplyHarmInternal(_bleedRate * Time.deltaTime, ulong.MaxValue, null);
@@ -137,8 +173,70 @@ namespace Probation.Surgery
 
         public void SetConscious(bool conscious)
         {
-            if (IsServer && !IsDead) _conscious.Value = conscious;
+            if (!IsServer || IsDead || _conscious.Value == conscious) return;
+
+            _conscious.Value = conscious;
+            ShiftDirector.Instance?.Announce(conscious ? "The patient is awake." : "The patient is under.");
         }
+
+        /// <summary>
+        /// Wheel a fresh one in. Beds are reused across the night - the alternative is spawning
+        /// network prefabs, and a bed you reset is the same thing with less machinery.
+        /// </summary>
+        public void Admit()
+        {
+            if (!IsServer) return;
+
+            HasLeft = false;
+            _bleedRate = 0f;
+            _harm.Value = Mathf.Clamp01(startingHarm);
+            _heartRate.Value = species != null ? species.restingHeartRate : 70f;
+            _conscious.Value = true;
+            SetState(PatientState.Stable);
+        }
+
+        /// <summary>Which bed this is on, if any. Set by WardBed.</summary>
+        public Probation.Game.WardBed Bed { get; set; }
+
+        /// <summary>Off the ward entirely - discharged or in the morgue. Waiting to be re-used.</summary>
+        public bool HasLeft { get; private set; } = true;
+
+        /// <summary>Their procedure is done and they are alive. The only thing the quota counts.</summary>
+        public bool IsTreated
+        {
+            get
+            {
+                var operation = GetComponent<Operation>();
+                return !IsDead && operation != null && operation.Finished;
+            }
+        }
+
+        /// <summary>
+        /// Leave the ward. The body is parked out of the way and its bed freed, ready to be
+        /// wheeled back in as somebody else - beds are reused rather than spawned.
+        /// </summary>
+        public void SendAway()
+        {
+            if (!IsServer || HasLeft) return;
+
+            HasLeft = true;
+            Bed?.Clear();
+
+            var body = GetComponent<Rigidbody>();
+            if (body != null)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+
+            transform.position = HoldingPosition;
+        }
+
+        /// <summary>Somewhere out of the way. Patients wait here between admissions.</summary>
+        private static readonly Vector3 HoldingPosition = new(0f, -40f, 0f);
+
+        /// <summary>Species rule that mutates every procedure without any new procedure code.</summary>
+        public bool ObjectsToMetal => species != null && species.allergicToMetal;
 
         private void Die(ulong byClientId)
         {

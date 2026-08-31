@@ -38,9 +38,9 @@ namespace Probation.Player
         [SerializeField] private float probeExtra = 0.30f;
         [SerializeField] private float probeRadius = 0.20f;
         [Tooltip("N per metre of error. Stiffer = snappier, but too stiff oscillates at 50Hz.")]
-        [SerializeField] private float rideSpring = 30000f;
+        [SerializeField] private float rideSpring = 45000f;
         [Tooltip("Critical damping for mass 70 at this stiffness is ~2900.")]
-        [SerializeField] private float rideDamper = 3000f;
+        [SerializeField] private float rideDamper = 3600f;
 
         [Header("Capsule")]
         [SerializeField] private float standCapsuleHeight = 1.4f;
@@ -50,25 +50,35 @@ namespace Probation.Player
         [SerializeField] private float crouchBlendSpeed = 10f;
 
         [Header("Speed (m/s)")]
-        [SerializeField] private float walkSpeed = 3.2f;
-        [SerializeField] private float sprintSpeed = 5.2f;
-        [SerializeField] private float crouchSpeed = 1.5f;
+        [SerializeField] private float walkSpeed = 4.2f;
+        [SerializeField] private float sprintSpeed = 6.8f;
+        [SerializeField] private float crouchSpeed = 1.8f;
 
         [Header("Acceleration (m/s^2)")]
-        [SerializeField] private float groundAcceleration = 45f;
-        [SerializeField] private float airAcceleration = 10f;
+        [SerializeField] private float groundAcceleration = 65f;
+        [SerializeField] private float airAcceleration = 14f;
 
         [Header("Jump")]
-        [SerializeField] private float jumpHeight = 0.9f;
+        [SerializeField] private float jumpHeight = 0.85f;
         [SerializeField] private float coyoteTime = 0.12f;
         [SerializeField] private float jumpBuffer = 0.12f;
         [Tooltip("The spring would yank you straight back down, so mute it briefly after a jump.")]
         [SerializeField] private float springMuteAfterJump = 0.2f;
         [Tooltip("Extra gravity while falling. 1 = realistic, higher = less floaty.")]
-        [SerializeField] private float fallGravityMultiplier = 1.8f;
+        [SerializeField] private float fallGravityMultiplier = 1.25f;
 
         [Header("Slopes")]
         [SerializeField] private float maxSlopeAngle = 50f;
+
+        [Header("Stamina")]
+        [Tooltip("Seconds of sprinting from full, unencumbered.")]
+        [SerializeField] private float sprintSeconds = 6f;
+        [Tooltip("Seconds to refill from empty once you stop sprinting.")]
+        [SerializeField] private float recoverSeconds = 5f;
+        [Tooltip("Pause before stamina starts coming back.")]
+        [SerializeField] private float recoverDelay = 0.7f;
+        [Tooltip("Drain multiplier at full encumbrance. Hauling a patient at a run is expensive.")]
+        [SerializeField] private float encumberedDrain = 2.6f;
 
         [Header("Encumbrance")]
         [Tooltip("Speed multiplier at Encumbrance = 1 (both hands on a patient).")]
@@ -80,6 +90,20 @@ namespace Probation.Player
         /// Set by the carry system. This is the hook that makes moving a patient feel like work.
         /// </summary>
         public float Encumbrance { get; set; }
+
+        /// <summary>
+        /// 0 to 1. Sprinting spends it, standing still refills it, and carrying a patient
+        /// spends it far faster.
+        ///
+        /// Walking is deliberately free - this is meant to make crossing a six bed ward at a
+        /// run a decision, not to put a leash on ordinary movement. PEAK can afford a constant
+        /// drain because climbing <em>is</em> the game; here traversal is connective tissue,
+        /// so the cost only bites when you are in a hurry or carrying somebody.
+        /// </summary>
+        public float Stamina { get; private set; } = 1f;
+
+        /// <summary>Too tired to run. Recovers, but not instantly.</summary>
+        public bool Winded { get; private set; }
 
         public bool IsGrounded { get; private set; }
         public bool IsCrouching { get; private set; }
@@ -129,6 +153,8 @@ namespace Probation.Player
 
         private void Update()
         {
+            UpdateStamina();
+
             // Crouch blend is visual as much as physical, so drive it at framerate.
             bool wantsCrouch = input != null && input.Crouch && !IsDowned;
             if (!wantsCrouch && IsCrouching && !HasHeadroom()) wantsCrouch = true;
@@ -138,6 +164,37 @@ namespace Probation.Player
                                              crouchBlendSpeed * Time.deltaTime);
 
             ApplyCapsuleShape();
+        }
+
+        private float _spentAt;
+
+        private void UpdateStamina()
+        {
+            bool wantsToSprint = input != null && input.Sprint
+                              && !IsCrouching && !IsDowned
+                              && new Vector2(Velocity.x, Velocity.z).sqrMagnitude > 1f;
+
+            if (wantsToSprint && !Winded)
+            {
+                float drain = Mathf.Lerp(1f, encumberedDrain, Mathf.Clamp01(Encumbrance));
+                Stamina -= Time.deltaTime / sprintSeconds * drain;
+                _spentAt = Time.time;
+
+                if (Stamina <= 0f)
+                {
+                    Stamina = 0f;
+                    Winded = true;
+                }
+                return;
+            }
+
+            if (Time.time - _spentAt < recoverDelay) return;
+
+            Stamina = Mathf.Min(1f, Stamina + Time.deltaTime / recoverSeconds);
+
+            // Deliberately not the instant you have a drop of stamina - being winded should
+            // cost you the next few seconds, which is when the Code fires.
+            if (Winded && Stamina > 0.35f) Winded = false;
         }
 
         private void FixedUpdate()
@@ -224,7 +281,11 @@ namespace Probation.Player
             }
 
             float speed = crouchSpeed;
-            if (!IsCrouching) speed = (input != null && input.Sprint) ? sprintSpeed : walkSpeed;
+            if (!IsCrouching)
+            {
+                bool sprinting = input != null && input.Sprint && !Winded && Stamina > 0f;
+                speed = sprinting ? sprintSpeed : walkSpeed;
+            }
             speed *= Mathf.Lerp(1f, encumberedSpeedMultiplier, Mathf.Clamp01(Encumbrance));
 
             Vector3 goalVelocity = wish * speed;

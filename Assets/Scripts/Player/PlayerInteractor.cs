@@ -15,7 +15,8 @@ namespace Probation.Player
         [Tooltip("Usually the Camera transform, so the cast follows the view rather than the body.")]
         [SerializeField] private Transform viewSource;
         [SerializeField] private LayerMask interactMask = ~0;
-        [SerializeField] private float reach = 2.2f;
+        [Tooltip("Point-and-pull range. Long enough to take an instrument off a bench across the ward - and out of a colleague's hand.")]
+        [SerializeField] private float reach = 4.5f;
         [SerializeField] private float castRadius = 0.12f;
 
         /// <summary>What is currently under the crosshair, or null. Drive the HUD prompt from this.</summary>

@@ -23,6 +23,12 @@ namespace Probation.Player
         /// <summary>True only on the frame Interact went down.</summary>
         public bool InteractPressed { get; private set; }
 
+        /// <summary>True while Interact is down. Drives hold-to-carry.</summary>
+        public bool InteractHeld { get; private set; }
+
+        /// <summary>True only on the frame Interact came back up.</summary>
+        public bool InteractReleased { get; private set; }
+
         /// <summary>
         /// True when Look last came from a mouse. Mouse delta is already per-frame pixels and
         /// must NOT be multiplied by deltaTime; a stick is a -1..1 value and must be.
@@ -81,7 +87,8 @@ namespace Probation.Player
         {
             _map?.Disable();
             Move = Look = Vector2.zero;
-            Sprint = Crouch = Attack = InteractPressed = false;
+            Sprint = Crouch = Attack = false;
+            InteractPressed = InteractHeld = InteractReleased = false;
         }
 
         private void Update()
@@ -94,6 +101,8 @@ namespace Probation.Player
             Crouch = _crouch.IsPressed();
             Attack = _attack.IsPressed();
             InteractPressed = _interact.WasPressedThisFrame();
+            InteractHeld = _interact.IsPressed();
+            InteractReleased = _interact.WasReleasedThisFrame();
 
             if (_jump.WasPressedThisFrame())
                 JumpPressedAt = Time.time;

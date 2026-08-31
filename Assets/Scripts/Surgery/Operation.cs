@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using Probation.Game;
 using Probation.Interaction;
-using Probation.Player;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -44,6 +43,7 @@ namespace Probation.Surgery
 
         private readonly Collider[] _overlap = new Collider[32];
         private readonly HashSet<ulong> _holders = new();
+        private readonly List<Grabbable> _usedThisStep = new();
         private float _nextHarmAllowedAt;
 
         private void Awake()
@@ -80,7 +80,25 @@ namespace Probation.Surgery
 
                 if (grabbable.ToolId == step.requiredToolId)
                 {
-                    if (Qualifies(grabbable.HeldBy, step)) _holders.Add(grabbable.HeldBy);
+                    // A dirty instrument is the wrong instrument. Somebody has to have taken it
+                    // to the steriliser, and in a busy ward somebody usually has not.
+                    if (grabbable.IsDirty)
+                    {
+                        wrongToolPresent = true;
+                        continue;
+                    }
+
+                    _holders.Add(grabbable.HeldBy);
+                    if (!_usedThisStep.Contains(grabbable)) _usedThisStep.Add(grabbable);
+
+                    // A species rule mutating an existing procedure - the cheapest content in
+                    // the design, and nothing about the procedure had to change to allow it.
+                    if (_patient.ObjectsToMetal && grabbable.IsMetal && Time.time >= _nextHarmAllowedAt)
+                    {
+                        _nextHarmAllowedAt = Time.time + wrongToolCooldown;
+                        _patient.ApplyHarm(0.08f, grabbable.HeldBy,
+                            $"used metal on a species that cannot take it");
+                    }
                 }
                 else if (!string.IsNullOrEmpty(grabbable.ToolId))
                 {
@@ -94,11 +112,34 @@ namespace Probation.Surgery
                 }
             }
 
+            // Operating on someone who is awake is allowed. It just hurts them, and everyone
+            // in the room finds out - which is the anaesthetist's liability made audible.
+            if (step.requiresUnconscious && _patient.IsConscious && _holders.Count > 0
+                && Time.time >= _nextHarmAllowedAt)
+            {
+                _nextHarmAllowedAt = Time.time + wrongToolCooldown;
+                foreach (ulong holder in _holders)
+                    _patient.ApplyHarm(0.1f, holder, "operated on a patient who was still awake");
+                ShiftDirector.Instance?.Announce("IT IS AWAKE.");
+            }
+
             // Wrong tool undoes progress rather than blocking input. The step never refuses you;
             // it just gets further away while you do the wrong thing.
-            if (wrongToolPresent || _holders.Count < step.handsRequired)
+            if (wrongToolPresent)
             {
                 _progress.Value = Mathf.MoveTowards(_progress.Value, 0f, Time.fixedDeltaTime / step.holdSeconds);
+                return;
+            }
+
+            if (_holders.Count < step.handsRequired)
+            {
+                // You walked away. Progress holds, so half-finished work can be picked back up
+                // by whoever gets here next - this is what lets one intern run four beds instead
+                // of standing at one. A patient who is falling apart undoes it slowly anyway,
+                // so leaving a bleeder is still a decision with a cost.
+                bool deteriorating = _patient.State is PatientState.Bleeding or PatientState.Critical;
+                if (deteriorating)
+                    _progress.Value = Mathf.MoveTowards(_progress.Value, 0f, Time.fixedDeltaTime / (step.holdSeconds * 4f));
                 return;
             }
 
@@ -106,22 +147,16 @@ namespace Probation.Surgery
             if (_progress.Value >= 1f) CompleteStep(step);
         }
 
-        /// <summary>A step can be gated on a specialism - Exostructure alone opens a carapace.</summary>
-        private bool Qualifies(ulong clientId, ProcedureStep step)
-        {
-            if (step.requiredSpecialism == Specialism.None) return true;
-
-            var player = NetworkManager.SpawnManager.GetPlayerNetworkObject(clientId);
-            var role = player != null ? player.GetComponent<PlayerRole>() : null;
-            return role != null && role.Specialism == step.requiredSpecialism;
-        }
-
         private void CompleteStep(ProcedureStep step)
         {
             _progress.Value = 0f;
 
+            foreach (var used in _usedThisStep) used.Soil();
+            _usedThisStep.Clear();
+
             if (step.opensBleed) _patient.StartBleeding(step.bleedRatePerSecond);
             if (step.closesBleed) _patient.StopBleeding();
+            if (step.sedates) _patient.SetConscious(false);
 
             foreach (ulong holder in _holders)
                 IncidentLog.Record(holder, $"completed '{step.displayName}'");
@@ -140,6 +175,15 @@ namespace Probation.Surgery
 
             foreach (ulong holder in _holders)
                 IncidentLog.Record(holder, $"completed the {procedure.displayName} - patient survived");
+        }
+
+        /// <summary>Start the procedure over for a newly admitted patient.</summary>
+        public void Restart()
+        {
+            if (!IsServer) return;
+            _stepIndex.Value = 0;
+            _progress.Value = 0f;
+            _finished.Value = false;
         }
 
         private Transform SiteFor(string siteId)
