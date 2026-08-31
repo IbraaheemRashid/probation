@@ -32,11 +32,17 @@ namespace Probation.Player
                 GUILayout.Label("Host address");
                 address = GUILayout.TextField(address);
 
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("port", GUILayout.Width(30f));
+                if (ushort.TryParse(GUILayout.TextField(port.ToString()), out ushort typed))
+                    port = typed;
+                GUILayout.EndHorizontal();
+
                 GUILayout.Space(6f);
-                if (GUILayout.Button("Host", GUILayout.Height(28f)) && ApplyConnectionData())
+                if (GUILayout.Button("Host", GUILayout.Height(28f)) && ApplyConnectionData(asHost: true))
                     net.StartHost();
 
-                if (GUILayout.Button("Join", GUILayout.Height(28f)) && ApplyConnectionData())
+                if (GUILayout.Button("Join", GUILayout.Height(28f)) && ApplyConnectionData(asHost: false))
                     net.StartClient();
             }
             else
@@ -53,9 +59,18 @@ namespace Probation.Player
             GUILayout.EndArea();
         }
 
-        private bool ApplyConnectionData()
+        private bool ApplyConnectionData(bool asHost)
         {
             var net = NetworkManager.Singleton;
+
+            // Starting on top of a live session leaves the old socket bound and the new bind
+            // fails with a bare "transport start failure".
+            if (net.IsListening)
+            {
+                Debug.LogWarning("[Probation] Already listening - shutting the old session down first.");
+                net.Shutdown();
+                return false;
+            }
 
             var transport = net.GetComponent<UnityTransport>();
             if (transport == null)
@@ -75,7 +90,13 @@ namespace Probation.Player
                                  "UnityTransport on this object. Assign it in the inspector to make it stick.");
             }
 
-            transport.SetConnectionData(address, port);
+            // A host binds to every interface, not to the address clients type in. Binding the
+            // server to 127.0.0.1 makes it unreachable from any other machine on the network,
+            // which is the difference between "works in the Editor" and "works with friends".
+            if (asHost) transport.SetConnectionData(address, port, "0.0.0.0");
+            else transport.SetConnectionData(address, port);
+
+            Debug.Log($"[Probation] {(asHost ? "Hosting on" : "Connecting to")} {address}:{port}");
             return true;
         }
     }

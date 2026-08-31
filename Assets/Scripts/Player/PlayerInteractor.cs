@@ -27,6 +27,9 @@ namespace Probation.Player
         /// <summary>This player's hands. Interactables route grabs through it.</summary>
         public PlayerCarry Carry { get; private set; }
 
+        /// <summary>Where this intern is looking. Used by held instruments that need to aim.</summary>
+        public Transform ViewSource => viewSource;
+
         private void Reset()
         {
             input = GetComponent<PlayerInputReader>();

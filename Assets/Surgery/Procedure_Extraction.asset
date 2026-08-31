@@ -1,0 +1,61 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b60b7d5c9f929be49ac48dd2af0c4e51, type: 3}
+  m_Name: Procedure_Extraction
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Procedure
+  displayName: extraction
+  description: Get the thing out without letting the patient empty itself.
+  steps:
+  - displayName: Open the seam
+    requiredToolId: scalpel
+    targetSite: torso
+    handsRequired: 1
+    requiredSpecialism: 0
+    tolerance: 0.35
+    holdSeconds: 1.5
+    wrongToolHarm: 0.12
+    opensBleed: 1
+    bleedRatePerSecond: 0.02
+    closesBleed: 0
+  - displayName: Hold the seam open
+    requiredToolId: retractor
+    targetSite: torso
+    handsRequired: 2
+    requiredSpecialism: 0
+    tolerance: 0.4
+    holdSeconds: 2
+    wrongToolHarm: 0.1
+    opensBleed: 0
+    bleedRatePerSecond: 0.02
+    closesBleed: 0
+  - displayName: Extract the foreign body
+    requiredToolId: forceps
+    targetSite: cavity
+    handsRequired: 1
+    requiredSpecialism: 0
+    tolerance: 0.3
+    holdSeconds: 2.5
+    wrongToolHarm: 0.2
+    opensBleed: 0
+    bleedRatePerSecond: 0.02
+    closesBleed: 0
+  - displayName: Close the incision
+    requiredToolId: suture kit
+    targetSite: torso
+    handsRequired: 1
+    requiredSpecialism: 0
+    tolerance: 0.35
+    holdSeconds: 3
+    wrongToolHarm: 0.15
+    opensBleed: 0
+    bleedRatePerSecond: 0.02
+    closesBleed: 1

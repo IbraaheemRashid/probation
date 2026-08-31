@@ -90,14 +90,14 @@ namespace Probation.Player
             // Where on the object the hand took hold, in the object's own space, so two people
             // hauling a gurney pull from the two places they actually grabbed.
             Vector3 localPoint = grabbable.transform.InverseTransformPoint(HandPosition);
-            grabbable.RequestGrabServerRpc(localPoint);
+            grabbable.RequestGrabRpc(localPoint);
         }
 
         public void Release()
         {
             if (Carried == null) return;
 
-            Carried.RequestReleaseServerRpc();
+            Carried.RequestReleaseRpc();
             Carried = null;
             _carriedBody = null;
             ApplyEncumbrance();

@@ -19,6 +19,7 @@ GameObject:
   - component: {fileID: 1393000341397134600}
   - component: {fileID: 2428896700341752316}
   - component: {fileID: 1501128035984333028}
+  - component: {fileID: 7394562280233702019}
   m_Layer: 8
   m_Name: Player
   m_TagString: Untagged
@@ -298,6 +299,19 @@ MonoBehaviour:
   holdTorque: 25
   dropDistance: 2
   grabTimeout: 1
+--- !u!114 &7394562280233702019
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1307607299905521931}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ae3726896cce064e8ff1d88c0bc857a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerRole
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1 &2889585250866751481
 GameObject:
   m_ObjectHideFlags: 0

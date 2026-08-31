@@ -1,5 +1,6 @@
 using Probation.Game;
 using Probation.Interaction;
+using Probation.Surgery;
 using Probation.Player;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -107,6 +108,7 @@ namespace Probation.EditorTools
             var locomotion = root.AddComponent<PlayerLocomotion>();
             var interactor = root.AddComponent<PlayerInteractor>();
             var carry = root.AddComponent<PlayerCarry>();
+            root.AddComponent<PlayerRole>();
 
             var inputAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
             if (inputAsset == null)
@@ -231,6 +233,12 @@ namespace Probation.EditorTools
                         ("locomotion", contents.GetComponent<PlayerLocomotion>()),
                         ("handAnchor", handAnchor));
                     Debug.Log("[Probation] Added missing PlayerCarry to the Player prefab.");
+                }
+
+                if (contents.GetComponent<PlayerRole>() == null)
+                {
+                    contents.AddComponent<PlayerRole>();
+                    Debug.Log("[Probation] Added missing PlayerRole to the Player prefab.");
                 }
 
                 var cursorLock = contents.GetComponent<CursorLock>();
@@ -394,12 +402,19 @@ namespace Probation.EditorTools
             // Tools: light, precise, one pair of hands each. Ownership follows the holder.
             Tool("Scalpel",   new Vector3(2.4f, 1.0f, 6.0f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
             Tool("Forceps",   new Vector3(2.8f, 1.0f, 6.0f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+            // Two retractors, not one two-handed retractor. A step that needs two pairs of
+            // hands is two owner-authoritative objects; one object with two owners is the trap.
             Tool("Retractor", new Vector3(3.2f, 1.0f, 6.0f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
-            Tool("Bone saw",  new Vector3(3.7f, 1.0f, 6.0f), new Vector3(0.10f, 0.06f, 0.40f), 3.0f, 0.25f);
+            Tool("Retractor", new Vector3(3.5f, 1.0f, 6.3f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
+            Tool("Bone saw",  new Vector3(3.9f, 1.0f, 6.0f), new Vector3(0.10f, 0.06f, 0.40f), 3.0f, 0.25f);
+            Tool("Suture kit", new Vector3(4.2f, 1.0f, 6.0f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
+
+            // Xenobiology's instrument. Point it at a patient to read them - and note there is
+            // one of it, so whoever is holding it is not holding anything else.
+            Tool("Scanner", new Vector3(2.0f, 1.0f, 6.4f), new Vector3(0.10f, 0.04f, 0.20f), 0.5f, 0.06f);
 
             // Heavy: host keeps authority, any number of hands, latency reads as weight.
-            Heavy("Gurney",  new Vector3(6.5f, 0.6f, 6.0f), new Vector3(1.9f, 0.6f, 0.85f), 45f, 0.55f);
-            Heavy("Patient", new Vector3(6.5f, 1.2f, 6.0f), new Vector3(0.55f, 0.55f, 1.7f), 70f, 0.85f);
+            Heavy("Gurney", new Vector3(6.5f, 0.6f, 6.0f), new Vector3(1.9f, 0.6f, 0.85f), 45f, 0.55f);
 
             foreach (var g in Object.FindObjectsByType<Grabbable>(FindObjectsSortMode.None))
                 if (g.transform.parent == null) g.transform.SetParent(root.transform, true);
@@ -429,6 +444,7 @@ namespace Probation.EditorTools
             var grabbable = go.AddComponent<Grabbable>();
             var so = new SerializedObject(grabbable);
             so.FindProperty("displayName").stringValue = name.ToLowerInvariant();
+            so.FindProperty("toolId").stringValue = kind == GrabKind.Tool ? name.ToLowerInvariant() : "";
             so.FindProperty("kind").enumValueIndex = (int)kind;
             so.FindProperty("encumbrance").floatValue = encumbrance;
             so.ApplyModifiedPropertiesWithoutUndo();
@@ -438,6 +454,294 @@ namespace Probation.EditorTools
             var nt = go.AddComponent<NetworkTransform>();
             ConfigureTransform(nt, localSpace: false, syncScale: false,
                                ownerAuthority: kind == GrabKind.Tool);
+        }
+
+        // ------------------------------------------------------------------ 7
+
+        private const string SurgeryAssetDir = "Assets/Surgery";
+
+        [MenuItem("Probation/Setup/7 - Add Patient and Procedures", priority = 6)]
+        public static void AddPatientAndProcedures()
+        {
+            if (Object.FindFirstObjectByType<NetworkManager>() == null)
+            {
+                Debug.LogError("No NetworkManager in the scene. Run step 4 first.");
+                return;
+            }
+
+            System.IO.Directory.CreateDirectory(SurgeryAssetDir);
+
+            var species = BuildSpecies();
+            var extraction = BuildExtraction();
+            var suture = BuildSuture();          // phase 5: content, not code
+            AssetDatabase.SaveAssets();
+
+            foreach (var name in new[] { "Patient (extraction)", "Patient (suture)" })
+            {
+                var old = GameObject.Find(name);
+                if (old != null) Object.DestroyImmediate(old);
+            }
+
+            // Extraction has a two-handed step, so it cannot be finished alone - that is the
+            // design working, not a bug. The suture patient is every-step-solo so the whole
+            // loop can be verified by one person before anyone else is in the room.
+            BuildPatient("Patient (extraction)", new Vector3(3f, 1.15f, 6f), species, extraction);
+            BuildPatient("Patient (suture)", new Vector3(0.4f, 1.15f, 6f), species, suture);
+
+            var table2 = Box("Operating table 2", new Vector3(0.4f, 0.45f, 6f), new Vector3(2.2f, 0.9f, 1.1f));
+            table2.transform.SetParent(GameObject.Find("Props")?.transform, true);
+
+            // One monitor, two tables. Wheel it to whoever needs watching - and notice that you
+            // cannot watch both at once.
+            BuildMonitor(new Vector3(1.7f, 0.55f, 7.4f));
+
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[Probation] Patient and procedures created in {SurgeryAssetDir}.");
+        }
+
+        private static Species BuildSpecies()
+        {
+            var species = LoadOrCreate<Species>($"{SurgeryAssetDir}/Species_Thoracid.asset");
+            species.displayName = "Thoracid";
+            species.restingHeartRate = 68f;
+            species.criticalHeartRate = 195f;
+            species.bleedOutSeconds = 45f;
+            species.wakesToNoise = true;          // volume becomes an input
+            species.allergicToMetal = false;
+            species.diagnosisText = "foreign body lodged in the upper cavity";
+            EditorUtility.SetDirty(species);
+            return species;
+        }
+
+        private static Procedure BuildExtraction()
+        {
+            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Extraction.asset");
+            procedure.displayName = "extraction";
+            procedure.description = "Get the thing out without letting the patient empty itself.";
+            procedure.steps = new System.Collections.Generic.List<ProcedureStep>
+            {
+                new() { displayName = "Open the seam", requiredToolId = "scalpel", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 1.5f, tolerance = 0.35f,
+                        wrongToolHarm = 0.12f, opensBleed = true, bleedRatePerSecond = 0.02f },
+
+                // Two hands means two interns each holding a retractor - two owner-authoritative
+                // objects, never one object with two owners.
+                new() { displayName = "Hold the seam open", requiredToolId = "retractor", targetSite = "torso",
+                        handsRequired = 2, holdSeconds = 2f, tolerance = 0.4f, wrongToolHarm = 0.1f },
+
+                new() { displayName = "Extract the foreign body", requiredToolId = "forceps", targetSite = "cavity",
+                        handsRequired = 1, holdSeconds = 2.5f, tolerance = 0.3f, wrongToolHarm = 0.2f },
+
+                new() { displayName = "Close the incision", requiredToolId = "suture kit", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 3f, tolerance = 0.35f,
+                        wrongToolHarm = 0.15f, closesBleed = true },
+            };
+            EditorUtility.SetDirty(procedure);
+            return procedure;
+        }
+
+        /// <summary>
+        /// Phase 5 exists to prove the framework generalises. If a second procedure is anything
+        /// more than a new asset and a new tool, the framework grew wrong and wants cutting back.
+        /// </summary>
+        private static Procedure BuildSuture()
+        {
+            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Suture.asset");
+            procedure.displayName = "suture";
+            procedure.description = "Close what somebody else opened.";
+            procedure.steps = new System.Collections.Generic.List<ProcedureStep>
+            {
+                new() { displayName = "Trace the seam", requiredToolId = "suture kit", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 4f, tolerance = 0.3f, wrongToolHarm = 0.18f },
+                new() { displayName = "Tie off", requiredToolId = "forceps", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 1.5f, tolerance = 0.3f,
+                        wrongToolHarm = 0.1f, closesBleed = true },
+            };
+            EditorUtility.SetDirty(procedure);
+            return procedure;
+        }
+
+        private static void BuildPatient(string name, Vector3 position, Species species, Procedure procedure)
+        {
+            var go = Box(name, position, new Vector3(0.55f, 0.35f, 1.7f));
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 70f;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            go.AddComponent<NetworkObject>();
+
+            var patient = go.AddComponent<Patient>();
+            SetRefs(patient, ("species", species));
+
+            var operation = go.AddComponent<Operation>();
+            SetRefs(operation, ("procedure", procedure));
+
+            // A patient is haulable, and stays haulable after it dies. A corpse is a physical
+            // problem somebody has to move, not a despawn.
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = "patient";
+            so.FindProperty("toolId").stringValue = "";
+            so.FindProperty("kind").enumValueIndex = (int)GrabKind.Heavy;
+            so.FindProperty("encumbrance").floatValue = 0.85f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ConfigureTransform(go.AddComponent<NetworkTransform>(),
+                               localSpace: false, syncScale: false, ownerAuthority: false);
+
+            Site(go.transform, "torso", new Vector3(0f, 0.2f, 0f));
+            Site(go.transform, "cavity", new Vector3(0f, 0.2f, 0.45f));
+
+        }
+
+        /// <summary>
+        /// The monitor cart. Heavy rather than a tool, so it is shoved into place with the grab
+        /// beam - and so two people can fight over where it goes.
+        /// </summary>
+        private static void BuildMonitor(Vector3 position)
+        {
+            var old = GameObject.Find("Vitals monitor");
+            if (old != null) Object.DestroyImmediate(old);
+
+            var go = Box("Vitals monitor", position, new Vector3(0.45f, 1.1f, 0.4f));
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 25f;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            go.AddComponent<NetworkObject>();
+
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = "vitals monitor";
+            so.FindProperty("toolId").stringValue = "";
+            so.FindProperty("kind").enumValueIndex = (int)GrabKind.Heavy;
+            so.FindProperty("encumbrance").floatValue = 0.3f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ConfigureTransform(go.AddComponent<NetworkTransform>(),
+                               localSpace: false, syncScale: false, ownerAuthority: false);
+
+            go.AddComponent<AudioSource>();
+            go.AddComponent<VitalsMonitor>();
+        }
+
+        private static void Site(Transform parent, string siteId, Vector3 localPosition)
+        {
+            var go = new GameObject($"Site_{siteId}");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPosition;
+            go.AddComponent<SurgerySite>().siteId = siteId;
+        }
+
+        private static T LoadOrCreate<T>(string path) where T : ScriptableObject
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset != null) return asset;
+
+            asset = ScriptableObject.CreateInstance<T>();
+            AssetDatabase.CreateAsset(asset, path);
+            return asset;
+        }
+
+        // ------------------------------------------------------------------ verify
+
+        /// <summary>
+        /// Checks the scene has everything the current scripts expect and adds whatever is
+        /// missing. Exists because the setup steps have grown over time, so a scene set up two
+        /// steps ago is quietly missing components added since - which presents as "the UI does
+        /// not show up" rather than as an error.
+        /// </summary>
+        [MenuItem("Probation/Verify and Repair Scene", priority = 20)]
+        public static void VerifyScene()
+        {
+            int added = 0, problems = 0;
+
+            var manager = Object.FindFirstObjectByType<NetworkManager>();
+            if (manager == null)
+            {
+                Debug.LogError("[Verify] No NetworkManager. Run step 4.");
+                return;
+            }
+
+            var go = manager.gameObject;
+            added += Ensure<UnityTransport>(go);
+            added += Ensure<NetworkBootstrap>(go);
+            added += Ensure<NetworkDiagnostics>(go);
+            added += Ensure<ShiftDirector>(go);
+            added += Ensure<SurgeryHud>(go);
+            added += Ensure<SteamManager>(go);
+            added += Ensure<SteamLobbyBootstrap>(go);
+            added += Ensure<FacepunchTransport>(go);
+
+            var so = new SerializedObject(manager);
+            if (so.FindProperty("NetworkConfig.NetworkTransport")?.objectReferenceValue == null)
+            {
+                AssignReference(so, "NetworkConfig.NetworkTransport", go.GetComponent<UnityTransport>());
+                so.ApplyModifiedPropertiesWithoutUndo();
+                Debug.Log("[Verify] NetworkConfig.NetworkTransport was unset - pointed at UnityTransport.");
+                added++;
+            }
+
+            var prefabProp = new SerializedObject(manager).FindProperty("NetworkConfig.PlayerPrefab");
+            if (prefabProp == null || prefabProp.objectReferenceValue == null)
+            {
+                Debug.LogError("[Verify] NetworkConfig.PlayerPrefab is not set. Run step 4.");
+                problems++;
+            }
+
+            if (Object.FindFirstObjectByType<LobbyCamera>() == null)
+            {
+                EnsureLobbyCamera();
+                added++;
+            }
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (prefab != null)
+            {
+                foreach (var (type, label) in new (System.Type, string)[]
+                {
+                    (typeof(PlayerCarry), nameof(PlayerCarry)),
+                    (typeof(PlayerRole), nameof(PlayerRole)),
+                    (typeof(CursorLock), nameof(CursorLock)),
+                    (typeof(PlayerNetworkSetup), nameof(PlayerNetworkSetup)),
+                })
+                {
+                    if (prefab.GetComponent(type) != null) continue;
+                    Debug.LogError($"[Verify] Player prefab is missing {label}. Run step 4.");
+                    problems++;
+                }
+            }
+
+            int patients = Object.FindObjectsByType<Patient>(FindObjectsSortMode.None).Length;
+            int monitors = Object.FindObjectsByType<VitalsMonitor>(FindObjectsSortMode.None).Length;
+            int tools = 0;
+            foreach (var g in Object.FindObjectsByType<Grabbable>(FindObjectsSortMode.None))
+                if (!string.IsNullOrEmpty(g.ToolId)) tools++;
+
+            if (patients == 0) { Debug.LogWarning("[Verify] No patients in the scene. Run step 7."); problems++; }
+            if (monitors == 0) { Debug.LogWarning("[Verify] No vitals monitor. Run step 7."); problems++; }
+            if (tools == 0) { Debug.LogWarning("[Verify] No tools with ids. Run step 6."); problems++; }
+
+            PutGreyboxFirstInBuild();
+
+            if (added > 0) EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+
+            Debug.Log($"[Verify] {patients} patients, {monitors} monitors, {tools} tools. " +
+                      $"Added {added} missing component(s), {problems} problem(s) needing a setup step. " +
+                      (added > 0 ? "SAVE THE SCENE." : "Nothing to add."));
+        }
+
+        private static int Ensure<T>(GameObject go) where T : Component
+        {
+            if (go.GetComponent<T>() != null) return 0;
+            go.AddComponent<T>();
+            Debug.Log($"[Verify] Added missing {typeof(T).Name} to {go.name}.");
+            return 1;
         }
 
         // ------------------------------------------------------------------ helpers

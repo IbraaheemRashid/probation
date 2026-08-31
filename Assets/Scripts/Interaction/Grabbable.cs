@@ -41,6 +41,8 @@ namespace Probation.Interaction
         [Tooltip("Shown on the interaction prompt and in incident log lines.")]
         [SerializeField] private string displayName = "object";
         [SerializeField] private GrabKind kind = GrabKind.Tool;
+        [Tooltip("What procedure steps ask for by name, e.g. scalpel, forceps, retractor.")]
+        [SerializeField] private string toolId = "";
 
         [Header("Handling")]
         [Tooltip("How much this slows you down while carried. 1 = both hands on a patient.")]
@@ -55,6 +57,10 @@ namespace Probation.Interaction
 
         public string DisplayName => displayName;
         public GrabKind Kind => kind;
+        public string ToolId => toolId;
+
+        /// <summary>Tools only: the client holding this, or ulong.MaxValue.</summary>
+        public ulong HeldBy => _heldBy.Value;
         public float Encumbrance => encumbrance;
         public float HaulBreakDistance => haulBreakDistance;
 
@@ -115,8 +121,8 @@ namespace Probation.Interaction
 
         // ---------------------------------------------------------------- grab / release
 
-        [ServerRpc(RequireOwnership = false)]
-        public void RequestGrabServerRpc(Vector3 localPoint, ServerRpcParams rpc = default)
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        public void RequestGrabRpc(Vector3 localPoint, RpcParams rpc = default)
         {
             ulong clientId = rpc.Receive.SenderClientId;
 
@@ -137,8 +143,8 @@ namespace Probation.Interaction
             _hauls.Add(new Haul(clientId, carry, localPoint));
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public void RequestReleaseServerRpc(ServerRpcParams rpc = default)
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        public void RequestReleaseRpc(RpcParams rpc = default)
         {
             ulong clientId = rpc.Receive.SenderClientId;
 

@@ -370,3 +370,78 @@ a phase 2 concern rather than a phase 6 one.
 `Probation ▸ Setup ▸ 6 - Add Grabbable Props` builds a table, four tools and a gurney plus a
 patient into the current scene. They are scene NetworkObjects, so the host spawns them
 automatically - no prefab registration needed.
+
+---
+
+# Phases 3-6 — patient, procedures, shift
+
+## The patient (phase 3)
+
+`Patient` is simulated by the host and nobody else. Everyone's shift score depends on it, so
+none of it can be client-reported.
+
+- States: `Stable → Bleeding → Critical → Dead`, driven by a single `harm` value.
+- `ApplyHarm(amount, byClientId, reason)` — **every caller names the intern responsible**.
+  That argument is what the review screen reads out.
+- **Death is not a fail state.** It is a logged incident, and the body stays in the world as a
+  `Heavy` grabbable that somebody has to wheel somewhere.
+- `VitalsMonitor` synthesises its beep at runtime, so it works with no audio assets. Positional
+  with a 14 m range: you can hear that another room is going badly without seeing why.
+
+`Species` is a ScriptableObject. This is how the game gets variety without new systems — the
+same procedures behave differently because the patient's rules changed.
+
+## Specialisms (phase 3)
+
+`PlayerRole` grants **information, never stats**. Stat classes make one player the good one;
+information classes force everyone to talk, which is the only reason to build a voice game.
+
+| Specialism | Sees |
+|---|---|
+| Anaesthesia | whether the patient is actually conscious |
+| Xenobiology | the real diagnosis |
+| Vascular | can close bleeds permanently |
+| Exostructure | gates steps that need a carapace opened |
+
+Chosen per shift at the locker (bottom-left HUD panel). Never permanent, never assigned, and
+two people may pick the same one.
+
+Values are replicated to everyone and gated at *display* time. Hiding them properly would need
+targeted RPCs, which is not worth it against four friends who can see each other's screens.
+
+## Procedure framework (phase 4)
+
+A `Procedure` is an ordered list of `ProcedureStep`. A step knows four things: which tool,
+which site, what counts as done, and how it fails.
+
+**A step never refuses an input.** There is no "is this allowed" check anywhere in `Operation`.
+Wrong things are allowed to happen and then have consequences — a framework that validates and
+rejects produces a puzzle game, and this is not one.
+
+Every test is a tolerance band: **near enough, for long enough**. The host judges slightly stale
+tool positions, so exact contact tests feel broken to everybody who is not hosting.
+
+`handsRequired` is what makes co-op structural rather than decorative. The extraction's
+"hold the seam open" needs **two** — and the scene ships **two retractors**, because two hands
+means two owner-authoritative objects, never one object with two owners.
+
+## Second procedure (phase 5)
+
+`Procedure_Suture.asset` is a new asset and a new tool. No new code. That was the test.
+
+## The shift (phase 6)
+
+`ShiftDirector` runs seven days of ~6.5 minutes with a review between each. The run-ending
+condition is the **hospital's** body count, never an individual's — interns are never removed
+from a run, because benching somebody for the remaining half hour is how you lose the group.
+
+The review groups `IncidentLog` by intern and reads it back. This is why attribution had to be
+threaded through from phase 2.
+
+## Not yet built
+
+- Sabotage (deliberately: phase 2 already permits it, and nothing prevents it)
+- The emergency ladder — Hiccup / Code / Incident / Outbreak
+- Patient spawning and intake; the scene has one hand-placed patient
+- Write-ups and the Orderly demotion
+- Voice
