@@ -250,6 +250,8 @@ namespace Probation.EditorTools
                 var pivot = contents.transform.Find("CameraPivot");
                 var camera = pivot != null ? pivot.Find("Camera") : null;
 
+                var brace = WireBrace(contents);
+
                 SetRefs(setup,
                     ("input", contents.GetComponent<PlayerInputReader>()),
                     ("look", pivot != null ? pivot.GetComponent<PlayerLook>() : null),
@@ -257,6 +259,7 @@ namespace Probation.EditorTools
                     ("interactor", contents.GetComponent<PlayerInteractor>()),
                     ("cursorLock", cursorLock),
                     ("carry", carry),
+                    ("brace", brace),
                     ("playerCamera", camera != null ? camera.GetComponent<Camera>() : null),
                     ("audioListener", camera != null ? camera.GetComponent<AudioListener>() : null),
                     ("body", contents.GetComponent<Rigidbody>()));
@@ -331,6 +334,76 @@ namespace Probation.EditorTools
             Debug.Log("[Probation] Player networked. Save the scene, then File > Build Profiles to make a test build.");
         }
 
+        /// <summary>
+        /// Add and wire <see cref="PlayerBrace"/> on an already-loaded prefab root.
+        ///
+        /// Shared so that a scene which needs bracing can guarantee it rather than assuming
+        /// somebody remembered to run step 4 - a prefab with no PlayerBrace on it presents as
+        /// "right mouse does nothing", with no error anywhere to explain why.
+        /// </summary>
+        private static PlayerBrace WireBrace(GameObject contents)
+        {
+            var pivot = contents.transform.Find("CameraPivot");
+            var camera = pivot != null ? pivot.Find("Camera") : null;
+
+            var brace = contents.GetComponent<PlayerBrace>();
+            if (brace == null)
+            {
+                brace = contents.AddComponent<PlayerBrace>();
+                Debug.Log("[Probation] Added missing PlayerBrace to the Player prefab.");
+            }
+
+            // Brace leans the CAMERA, never the pivot - Locomotion owns the pivot's local Y for
+            // crouch and eye height, and the two would fight over it every frame.
+            SetRefs(brace,
+                ("input", contents.GetComponent<PlayerInputReader>()),
+                ("interactor", contents.GetComponent<PlayerInteractor>()),
+                ("carry", contents.GetComponent<PlayerCarry>()),
+                ("look", pivot != null ? pivot.GetComponent<PlayerLook>() : null),
+                ("locomotion", contents.GetComponent<PlayerLocomotion>()),
+                ("view", camera != null ? camera.GetComponent<Camera>() : null));
+
+            // Your own capsule is not a surface you can brace against. The raycast starts inside
+            // it, which Unity would normally ignore, but crouching puts the eye level with your
+            // own shoulders and that stops being reliable.
+            int playerLayer = LayerMask.NameToLayer(PlayerLayerName);
+            if (playerLayer >= 0) SetMask(brace, "workMask", ~(1 << playerLayer));
+
+            return brace;
+        }
+
+        /// <summary>
+        /// Guarantee the saved Player prefab can brace, wiring it if it cannot. Returns false only
+        /// if the prefab is missing entirely.
+        /// </summary>
+        private static bool EnsurePlayerCanBrace()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (prefab == null) return false;
+
+            if (prefab.GetComponent<PlayerBrace>() != null) return true;
+
+            var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            try
+            {
+                var brace = WireBrace(contents);
+
+                // Without this the gate in PlayerNetworkSetup never fires and remote players keep
+                // a live PlayerBrace.
+                var setup = contents.GetComponent<PlayerNetworkSetup>();
+                if (setup != null) SetRefs(setup, ("brace", brace));
+
+                PrefabUtility.SaveAsPrefabAsset(contents, PlayerPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(contents);
+            }
+
+            AssetDatabase.SaveAssets();
+            return true;
+        }
+
         private static void ConfigureTransform(NetworkTransform nt, bool localSpace, bool syncScale, bool ownerAuthority = true)
         {
             nt.InLocalSpace = localSpace;
@@ -399,7 +472,12 @@ namespace Probation.EditorTools
             bench.transform.SetParent(root.transform, true);
 
             // Tools: light, precise, one pair of hands each. Ownership follows the holder.
-            Tool("Scalpel",    new Vector3(-2.2f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+            var scalpel = Tool("Scalpel", new Vector3(-2.2f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+
+            // The first instrument that actually does something when you press the button. Until
+            // now the scalpel was the one tool no procedure step ever asked for - it existed
+            // purely to be the wrong answer.
+            scalpel.AddComponent<ScalpelTool>();
             Tool("Forceps",    new Vector3(-1.5f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
             Tool("Forceps",    new Vector3(-0.9f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
 
@@ -424,14 +502,25 @@ namespace Probation.EditorTools
             Debug.Log("[Probation] Props added. Scene NetworkObjects spawn automatically when you host.");
         }
 
-        private static void Tool(string name, Vector3 position, Vector3 size, float mass, float encumbrance) =>
-            Grab(name, position, size, mass, encumbrance, GrabKind.Tool);
+        private static GameObject Tool(string name, Vector3 position, Vector3 size, float mass, float encumbrance)
+        {
+            var go = Grab(name, position, size, mass, encumbrance, GrabKind.Tool);
 
-        private static void Heavy(string name, Vector3 position, Vector3 size, float mass, float encumbrance) =>
+            // Every instrument gets a working end. Convention is local +Z, so the tip sits on the
+            // far +Z face - which is why every tool above is authored long on Z.
+            var tip = new GameObject("Tip");
+            tip.transform.SetParent(go.transform, false);
+            tip.transform.localPosition = new Vector3(0f, 0f, 0.5f);
+            tip.AddComponent<ToolTip>();
+
+            return go;
+        }
+
+        private static GameObject Heavy(string name, Vector3 position, Vector3 size, float mass, float encumbrance) =>
             Grab(name, position, size, mass, encumbrance, GrabKind.Heavy);
 
-        private static void Grab(string name, Vector3 position, Vector3 size, float mass,
-                                 float encumbrance, GrabKind kind)
+        private static GameObject Grab(string name, Vector3 position, Vector3 size, float mass,
+                                       float encumbrance, GrabKind kind)
         {
             var go = Box(name, position, size);
 
@@ -455,6 +544,8 @@ namespace Probation.EditorTools
             var nt = go.AddComponent<NetworkTransform>();
             ConfigureTransform(nt, localSpace: false, syncScale: false,
                                ownerAuthority: kind == GrabKind.Tool);
+
+            return go;
         }
 
         // ------------------------------------------------------------------ 7
@@ -482,61 +573,144 @@ namespace Probation.EditorTools
                 Object.DestroyImmediate(patient.gameObject);
 
             var ward = new GameObject("Ward");
+            var t = ward.transform;
 
-            // Six beds in two rows, far enough apart that crossing the ward costs you time.
-            for (int i = 0; i < 6; i++)
-            {
-                float x = -6f + i % 3 * 6f;
-                float z = 4f + i / 3 * 7f;
-                Bed(ward.transform, i + 1, new Vector3(x, 0f, z));
-            }
+            // Intake at the south end, theatres along the north, discharge and morgue at the far
+            // corners. Everything has to cross the middle, which is where interns meet each other
+            // going opposite ways with trolleys.
+            Slab(t, "Ward floor", new Vector3(0f, -0.5f, 6f), new Vector3(42f, 1f, 34f), solid: true);
 
-            // More bodies than beds, so intake never runs dry. Half want the quick job, half
-            // want the two-handed one - a ward that is all one or all the other has no triage
-            // decision in it.
-            for (int i = 0; i < 8; i++)
-                BuildPatient(ward.transform, $"Patient {i + 1}", species, i % 2 == 0 ? triage : extraction);
+            Slab(t, "Wall S", new Vector3(0f, 2f, -10f), new Vector3(42f, 5f, 0.5f), solid: true);
+            Slab(t, "Wall N", new Vector3(0f, 2f, 23f), new Vector3(42f, 5f, 0.5f), solid: true);
+            Slab(t, "Wall W", new Vector3(-21f, 2f, 6f), new Vector3(0.5f, 5f, 34f), solid: true);
+            Slab(t, "Wall E", new Vector3(21f, 2f, 6f), new Vector3(0.5f, 5f, 34f), solid: true);
 
-            Zone(ward.transform, "Discharge bay", new Vector3(10f, 1f, 12f), WardZoneKind.Discharge);
-            Zone(ward.transform, "Morgue", new Vector3(-10f, 1f, 12f), WardZoneKind.Morgue);
-            BuildSteriliser(ward.transform, new Vector3(0f, 0.6f, -2f));
+            // Waiting room, with a gap in the middle you steer trolleys out through.
+            Slab(t, "WAITING ROOM", new Vector3(0f, 0.02f, -6f), new Vector3(11f, 0.02f, 7f), solid: false);
+            Slab(t, "Waiting wall W", new Vector3(-8f, 2f, -2f), new Vector3(10f, 5f, 0.5f), solid: true);
+            Slab(t, "Waiting wall E", new Vector3(8f, 2f, -2f), new Vector3(10f, 5f, 0.5f), solid: true);
+            for (int i = 0; i < 4; i++)
+                Slab(t, $"Waiting chair {i + 1}", new Vector3(-4.5f + i * 3f, 0.45f, -8f),
+                     new Vector3(0.7f, 0.9f, 0.7f), solid: true);
 
-            // PEAK's backpack, as furniture. Instruments sit on it, you shove it to whichever
-            // bed is on fire, and anybody can shove it somewhere else. It extends what the team
-            // can carry without ever giving anybody an inventory.
-            InstrumentTray(ward.transform, new Vector3(-2.5f, 0.55f, 0f));
+            for (int i = 0; i < 4; i++)
+                Bay(t, i + 1, new Vector3(-13.5f + i * 9f, 0f, 15f));
 
-            // One monitor, six beds. Whoever wants a heartbeat has to go and fetch it.
-            BuildMonitor(new Vector3(2.5f, 0.55f, 0f));
+            Zone(t, "Discharge bay", new Vector3(17f, 1.5f, -6f), new Vector3(6f, 4f, 6f), WardZoneKind.Discharge);
+            Slab(t, "DISCHARGE", new Vector3(17f, 0.02f, -6f), new Vector3(6f, 0.02f, 6f), solid: false);
+
+            Zone(t, "Morgue", new Vector3(-17f, 1.5f, -6f), new Vector3(6f, 4f, 6f), WardZoneKind.Morgue);
+            Slab(t, "MORGUE", new Vector3(-17f, 0.02f, -6f), new Vector3(6f, 0.02f, 6f), solid: false);
+
+            BuildSteriliser(t, new Vector3(0f, 0.7f, 3.5f));
+            InstrumentTray(t, new Vector3(-3f, 0.55f, 3.5f));
+            BuildMonitor(new Vector3(3f, 0.55f, 3.5f));
             var monitor = GameObject.Find("Vitals monitor");
-            if (monitor != null) monitor.transform.SetParent(ward.transform, true);
+            if (monitor != null) monitor.transform.SetParent(t, true);
+
+            BuildIntakeBay(t);
+            Slab(t, "INTAKE", new Vector3(0f, 0.02f, -5.5f), new Vector3(18f, 0.02f, 6f), solid: false);
+
+            for (int i = 0; i < 6; i++)
+                Trolley(t, i + 1, new Vector3(-6.5f + i * 2.6f, 0.5f, -5f));
+
+            for (int i = 0; i < 8; i++)
+                BuildPatient(t, $"Patient {i + 1}", species, i % 2 == 0 ? triage : extraction);
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             AssetDatabase.SaveAssets();
-            Debug.Log("[Probation] Ward built: 6 beds, 8 patients, discharge, morgue, steriliser.");
+            Debug.Log("[Probation] Ward built: waiting room, 4 theatres, discharge, morgue, 6 gurneys, 8 patients.");
         }
 
-        private static void Bed(Transform parent, int number, Vector3 position)
+        /// <summary>Geometry. Solid ones collide; the flat ones are floor markings.</summary>
+        private static GameObject Slab(Transform parent, string name, Vector3 position, Vector3 size, bool solid)
         {
-            var table = Box($"Bed {number}", position + Vector3.up * 0.45f, new Vector3(1.0f, 0.9f, 2.1f));
-            table.transform.SetParent(parent, true);
-
-            var surface = new GameObject("Surface");
-            surface.transform.SetParent(table.transform, false);
-            surface.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-
-            var bed = table.AddComponent<WardBed>();
-            SetRefs(bed, ("surface", surface.transform));
-        }
-
-        private static void Zone(Transform parent, string name, Vector3 position, WardZoneKind kind)
-        {
-            var go = Box(name, position, new Vector3(4f, 2f, 4f));
+            var go = Box(name, position, size);
             go.transform.SetParent(parent, true);
 
-            // A doorway you push a gurney through, not a wall you bump into.
-            var collider = go.GetComponent<BoxCollider>();
-            collider.isTrigger = true;
+            if (solid) go.isStatic = true;
+            else Object.DestroyImmediate(go.GetComponent<Collider>());
+
+            return go;
+        }
+
+        /// <summary>
+        /// An operating theatre: two walls, an open front, and a volume you are allowed to work
+        /// inside. The volume is the point - procedures do not progress in a corridor, which is
+        /// what turns "a patient arrived" into "somebody wheel them somewhere".
+        /// </summary>
+        private static void Bay(Transform parent, int number, Vector3 origin)
+        {
+            Slab(parent, $"Theatre {number} wall W", origin + new Vector3(-3.5f, 2f, 3f), new Vector3(0.5f, 5f, 7f), solid: true);
+            Slab(parent, $"Theatre {number} wall E", origin + new Vector3(3.5f, 2f, 3f), new Vector3(0.5f, 5f, 7f), solid: true);
+            Slab(parent, $"THEATRE {number}", origin + new Vector3(0f, 0.02f, 3f), new Vector3(6.5f, 0.02f, 7f), solid: false);
+
+            var volume = Box($"Bay {number}", origin + new Vector3(0f, 1.6f, 3f), new Vector3(6.5f, 3.5f, 7f));
+            volume.transform.SetParent(parent, true);
+            volume.GetComponent<BoxCollider>().isTrigger = true;
+            Object.DestroyImmediate(volume.GetComponent<MeshRenderer>());
+
+            var bay = volume.AddComponent<OperatingBay>();
+            var so = new SerializedObject(bay);
+            so.FindProperty("bayName").stringValue = $"Theatre {number}";
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// The volume new patients are admitted into. Without one, intake has nowhere to put
+        /// anybody and the night silently never starts.
+        /// </summary>
+        private static void BuildIntakeBay(Transform parent)
+        {
+            var go = Box("Intake bay", new Vector3(0f, 1.5f, -5.5f), new Vector3(18f, 4f, 6f));
+            if (parent != null) go.transform.SetParent(parent, true);
+
+            go.GetComponent<BoxCollider>().isTrigger = true;
+            Object.DestroyImmediate(go.GetComponent<MeshRenderer>());
+
+            go.AddComponent<IntakeBay>();
+            Debug.Log("[Probation] Intake bay built.");
+        }
+
+        private static void Trolley(Transform parent, int number, Vector3 position)
+        {
+            var go = Box($"Gurney {number}", position, new Vector3(0.9f, 1f, 2.1f));
+            go.transform.SetParent(parent, true);
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 40f;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            // A gurney that tips over is a bug, not a joke.
+            body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+
+            go.AddComponent<NetworkObject>();
+
+            var surface = new GameObject("Surface");
+            surface.transform.SetParent(go.transform, false);
+            surface.transform.localPosition = new Vector3(0f, 0.65f, 0f);
+
+            SetRefs(go.AddComponent<Gurney>(), ("surface", surface.transform));
+
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = $"gurney {number}";
+            so.FindProperty("toolId").stringValue = "";
+            so.FindProperty("kind").enumValueIndex = (int)GrabKind.Heavy;
+            so.FindProperty("encumbrance").floatValue = 0.5f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ConfigureTransform(go.AddComponent<NetworkTransform>(),
+                               localSpace: false, syncScale: false, ownerAuthority: false);
+        }
+
+        private static void Zone(Transform parent, string name, Vector3 position, Vector3 size, WardZoneKind kind)
+        {
+            var go = Box(name, position, size);
+            go.transform.SetParent(parent, true);
+            go.GetComponent<BoxCollider>().isTrigger = true;
+            Object.DestroyImmediate(go.GetComponent<MeshRenderer>());
 
             var zone = go.AddComponent<WardZone>();
             var so = new SerializedObject(zone);
@@ -570,7 +744,7 @@ namespace Probation.EditorTools
 
         private static void BuildSteriliser(Transform parent, Vector3 position)
         {
-            var go = Box("Steriliser", position, new Vector3(1.6f, 1.2f, 1.0f));
+            var go = Box("Steriliser", position, new Vector3(1.6f, 1.4f, 1.0f));
             go.transform.SetParent(parent, true);
             go.GetComponent<BoxCollider>().isTrigger = true;
             go.AddComponent<Steriliser>();
@@ -655,6 +829,11 @@ namespace Probation.EditorTools
 
             // A patient is haulable, and stays haulable after it dies. A corpse is a physical
             // problem somebody has to move, not a despawn.
+            go.AddComponent<PatientAppearance>();
+
+            var renderer = go.GetComponent<MeshRenderer>();
+            if (renderer != null) renderer.sharedMaterial = FleshMaterial();
+
             var grabbable = go.AddComponent<Grabbable>();
             var so = new SerializedObject(grabbable);
             so.FindProperty("displayName").stringValue = "patient";
@@ -704,6 +883,31 @@ namespace Probation.EditorTools
             go.AddComponent<VitalsMonitor>();
         }
 
+        /// <summary>
+        /// The one authored material in the project. Everything else is untextured greybox on
+        /// purpose - the ward is meant to read as flat and clinical so the patients are the only
+        /// organic thing in the building. That contrast is the art direction.
+        /// </summary>
+        private static Material FleshMaterial()
+        {
+            const string path = SurgeryAssetDir + "/M_PatientFlesh.mat";
+
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing != null) return existing;
+
+            var shader = Shader.Find("Probation/PatientFlesh");
+            if (shader == null)
+            {
+                Debug.LogWarning("[Probation] Probation/PatientFlesh not found - patients will use the default material.");
+                return null;
+            }
+
+            var material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+            Debug.Log($"[Probation] Created {path}.");
+            return material;
+        }
+
         private static void Site(Transform parent, string siteId, Vector3 localPosition)
         {
             var go = new GameObject($"Site_{siteId}");
@@ -722,6 +926,239 @@ namespace Probation.EditorTools
             return asset;
         }
 
+        // ------------------------------------------------------------------ 8
+
+        private const string TestbedScenePath = "Assets/Scenes/Surgery_Testbed.unity";
+
+        /// <summary>
+        /// A room with nothing in it but things to cut.
+        ///
+        /// It exists to answer the question the rest of the surgery rehaul is waiting on: does
+        /// dragging a blade along a line, blind, with speed punishing you, feel good for four
+        /// seconds? Everything not needed to answer that is absent - no patients, no procedures,
+        /// no shift, no quota, no ward.
+        ///
+        /// Three stations, because the work plane is captured from a raycast and frozen, and a
+        /// single flat table would never prove that generalises. Three scalpel weights, because
+        /// "does the lag feel like weight or like input lag" is the first thing to judge and you
+        /// cannot judge it without something to compare against.
+        ///
+        /// It still runs a NetworkManager. Grabbable and PlayerCarry are NetworkBehaviours and
+        /// are completely inert without one, so a "no netcode" testbed would test nothing.
+        /// NetworkBootstrap.autoHost starts it, so pressing Play is the whole setup.
+        /// </summary>
+        [MenuItem("Probation/Setup/8 - Build Surgery Testbed", priority = 7)]
+        public static void BuildSurgeryTestbed()
+        {
+            // Bracing is the entire point of this scene, so guarantee the prefab can do it rather
+            // than assuming step 4 has been re-run since PlayerBrace was written. A prefab without
+            // it presents as "right mouse does nothing", with nothing in the console to say why.
+            if (!EnsurePlayerCanBrace())
+            {
+                Debug.LogError("[Probation] No Player prefab. Run steps 2 and 4 first.");
+                return;
+            }
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            EnsureLobbyCamera();
+
+            // Bright and flat. A seam is a thin line on a dark surface, and half of judging a cut
+            // is being able to see where the last one went.
+            var lightGo = new GameObject("Directional Light");
+            var light = lightGo.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.intensity = 1.3f;
+            light.shadows = LightShadows.Soft;
+            lightGo.transform.rotation = Quaternion.Euler(52f, -28f, 0f);
+            RenderSettings.ambientIntensity = 1.2f;
+
+            Box("Floor", new Vector3(0f, -0.5f, 0f), new Vector3(24f, 1f, 24f));
+
+            var testbed = new GameObject("Testbed");
+            testbed.AddComponent<SurgeryTestbed>();
+
+            // Greybox gets its crosshair from SurgeryHud, which lives on the ward's NetworkManager
+            // and drags in the whole shift with it. The testbed has none of that, so without this
+            // there is no crosshair and no prompt - and aiming a spherecast at a bench with no
+            // crosshair is indistinguishable from grabbing being broken.
+            testbed.AddComponent<InteractionHud>();
+
+            // --- network -----------------------------------------------------
+            var managerGo = new GameObject("NetworkManager");
+            var manager = managerGo.AddComponent<NetworkManager>();
+            var transport = managerGo.AddComponent<UnityTransport>();
+
+            var bootstrap = managerGo.AddComponent<NetworkBootstrap>();
+            var bootSo = new SerializedObject(bootstrap);
+            bootSo.FindProperty("autoHost").boolValue = true;
+            bootSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var managerSo = new SerializedObject(manager);
+            AssignReference(managerSo, "NetworkConfig.NetworkTransport", transport);
+            AssignReference(managerSo, "NetworkConfig.PlayerPrefab", prefab);
+            managerSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // NOTHING may be placed at the world origin. NetworkManager spawns the player at the
+            // prefab's own transform, and Player.prefab sits at (0, 0, 0) - so the origin is the
+            // spawn point. A bench there means spawning inside a solid collider, being ejected by
+            // the solver, and taking the instruments with you.
+            const float benchZ = 1.6f;
+            const float stationZ = 4.2f;
+
+            // --- three weights, straight ahead of the spawn ---------------------
+            Box("Bench", new Vector3(0f, 0.45f, benchZ), new Vector3(2.4f, 0.9f, 0.7f));
+
+            // Same shape, same tip, three masses. PlayerCarry's speed ceiling is
+            // maxCarrySpeed / (mass * massDrag), so these three should feel genuinely different
+            // in the hand - and if they do not, massDrag is the value to reach for first.
+            Blade("Scalpel light", new Vector3(-0.7f, 1.0f, benchZ), 0.12f);
+            Blade("Scalpel", new Vector3(0f, 1.0f, benchZ), 0.30f);
+            Blade("Scalpel heavy", new Vector3(0.7f, 1.0f, benchZ), 0.90f);
+
+            // --- three surfaces, past the bench ---------------------------------
+            // Flat. The baseline, and the one that has to feel right first.
+            Station("Flat", new Vector3(0f, 0f, stationZ), tilt: 0f);
+
+            // Tilted. The work plane is captured from the surface normal, so this proves the
+            // tangent basis is not quietly assuming the world is horizontal.
+            Station("Tilted 20deg", new Vector3(2.8f, 0f, stationZ), tilt: 20f);
+
+            // Near vertical. The awkward case: braced against something you cannot look down at.
+            Station("Upright 75deg", new Vector3(-2.8f, 0f, stationZ), tilt: 75f);
+
+            WarnIfSpawnBlocked();
+
+            System.IO.Directory.CreateDirectory("Assets/Scenes");
+            EditorSceneManager.SaveScene(scene, TestbedScenePath);
+
+            // Make it part of the project, not just a file on disk: listed in Build Settings,
+            // loadable by name, and present in a player build so the two-machine test can use it.
+            AddSceneToBuild(TestbedScenePath);
+            PutGreyboxFirstInBuild();
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"[Probation] Surgery testbed written to {TestbedScenePath}. Press Play. " +
+                      "E to take a scalpel, walk to a station, hold RMB to brace, hold LMB and " +
+                      "drag along the seam - slowly. R closes every seam so you can go again.");
+        }
+
+        /// <summary>
+        /// The player is spawned by NetworkManager at Player.prefab's own transform, which is the
+        /// world origin - so anything solid parked there is something the intern spawns inside of.
+        ///
+        /// The symptom is never "I am inside a bench". It is the solver ejecting you across the
+        /// room and taking the loose props with you, which presents as "I cannot pick anything up".
+        /// </summary>
+        private static void WarnIfSpawnBlocked()
+        {
+            Physics.SyncTransforms();
+
+            // Starts at 0.6 so the sphere at the bottom clears the floor's top face - otherwise
+            // this fires on the floor every time and the warning becomes noise you learn to skip.
+            var hits = Physics.OverlapCapsule(new Vector3(0f, 0.6f, 0f), new Vector3(0f, 1.6f, 0f),
+                                              0.4f, ~0, QueryTriggerInteraction.Ignore);
+
+            foreach (var hit in hits)
+            {
+                if (hit == null) continue;
+
+                Debug.LogError($"[Probation] '{hit.name}' is sitting on the player spawn at the " +
+                               "world origin. The intern will spawn inside it, get ejected, and " +
+                               "scatter the instruments on the way out.", hit.gameObject);
+            }
+        }
+
+        /// <summary>A table, a body-sized slab on it at some tilt, and a seam down the slab.</summary>
+        private static void Station(string name, Vector3 origin, float tilt)
+        {
+            var root = new GameObject($"Station - {name}");
+            root.transform.position = origin;
+
+            Box($"{name} table", origin + new Vector3(0f, 0.45f, 0f), new Vector3(1.0f, 0.9f, 1.6f))
+                .transform.SetParent(root.transform, true);
+
+            // Tilt about Z so the slab leans left-right: you can still stand at the long side of
+            // the table and look at the face of it, which is how you would stand at a patient.
+            var rotation = Quaternion.Euler(0f, 0f, tilt);
+
+            const float halfWidth = 0.31f, halfDepth = 0.11f, tableTop = 0.9f;
+
+            // Lift it clear of its own table. A tilted box is taller than an untilted one, and at
+            // 75 degrees a slab parked at a fixed height sinks a third of a metre into the table.
+            float radians = tilt * Mathf.Deg2Rad;
+            float halfHeight = halfWidth * Mathf.Abs(Mathf.Sin(radians))
+                             + halfDepth * Mathf.Abs(Mathf.Cos(radians));
+
+            var slab = Box($"{name} body",
+                           origin + new Vector3(0f, tableTop + halfHeight + 0.01f, 0f),
+                           new Vector3(halfWidth * 2f, halfDepth * 2f, 1.5f));
+            slab.transform.rotation = rotation;
+            slab.transform.SetParent(root.transform, true);
+
+            // Sit the seam just proud of the slab's top face, in the slab's own frame, so it
+            // stays on the surface at any tilt.
+            Vector3 surfaceUp = rotation * Vector3.up;
+            Vector3 seamCentre = slab.transform.position + surfaceUp * (halfDepth + 0.006f);
+
+            BuildSeam(root.transform, seamCentre, rotation * Vector3.forward, length: 0.36f, points: 7);
+        }
+
+        private static void Blade(string name, Vector3 position, float mass)
+        {
+            var go = Tool(name, position, new Vector3(0.04f, 0.03f, 0.28f), mass, 0.05f);
+
+            var blade = go.AddComponent<ScalpelTool>();
+            var so = new SerializedObject(blade);
+            so.FindProperty("showDebug").boolValue = true;      // tuning readout, testbed only
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>A straight seam of the given length, centred and running along an axis.</summary>
+        private static void BuildSeam(Transform parent, Vector3 centre, Vector3 along,
+                                      float length, int points)
+        {
+            var go = new GameObject("Seam");
+            go.transform.position = centre;
+            go.transform.rotation = Quaternion.LookRotation(along, Vector3.up);
+
+            // Parented only AFTER the transform is set, and only to an unscaled root. Hanging a
+            // seam off a scaled primitive stretches its points: a slab with lossyScale
+            // (0.62, 0.22, 1.5) would throw the line off the end of the collider entirely.
+            if (parent != null) go.transform.SetParent(parent, true);
+
+            var line = go.AddComponent<LineRenderer>();
+            line.material = new Material(Shader.Find("Sprites/Default"));
+            line.useWorldSpace = true;
+            line.textureMode = LineTextureMode.Stretch;
+            line.numCapVertices = 2;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+
+            var nodes = new Transform[points];
+            for (int i = 0; i < points; i++)
+            {
+                float t = points > 1 ? i / (float)(points - 1) : 0.5f;
+
+                var node = new GameObject($"P{i}");
+                node.transform.SetParent(go.transform, false);
+                node.transform.localPosition = new Vector3(0f, 0f, Mathf.Lerp(-length * 0.5f, length * 0.5f, t));
+                nodes[i] = node.transform;
+            }
+
+            var seam = go.AddComponent<Seam>();
+            var so = new SerializedObject(seam);
+            var array = so.FindProperty("points");
+            array.arraySize = points;
+            for (int i = 0; i < points; i++)
+                array.GetArrayElementAtIndex(i).objectReferenceValue = nodes[i];
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
         // ------------------------------------------------------------------ verify
 
         /// <summary>
@@ -734,6 +1171,16 @@ namespace Probation.EditorTools
         public static void VerifyScene()
         {
             int added = 0, problems = 0;
+
+            // Verify repairs a WARD - it adds ShiftDirector, PatientIntake, the HUDs and the
+            // complication director. Run against the testbed it would bolt a whole hospital onto
+            // a scene whose entire point is that none of that is there.
+            if (SceneManager.GetActiveScene().path == TestbedScenePath)
+            {
+                Debug.Log("[Verify] This is the surgery testbed, not a ward - nothing to repair. " +
+                          "Rebuild it with Probation > Setup > 8 if it has drifted.");
+                return;
+            }
 
             var manager = Object.FindFirstObjectByType<NetworkManager>();
             if (manager == null)
@@ -751,6 +1198,16 @@ namespace Probation.EditorTools
             added += Ensure<ShiftHud>(go);
             added += Ensure<PatientIntake>(go);
             added += Ensure<ComplicationDirector>(go);
+
+            // Wards built before the intake bay existed have no way to admit anybody, and the
+            // symptom is simply that no patients ever appear. Repair it in place rather than
+            // making you rebuild the ward and lose wherever everything has been parked.
+            if (Object.FindFirstObjectByType<IntakeBay>() == null)
+            {
+                var ward = GameObject.Find("Ward");
+                BuildIntakeBay(ward != null ? ward.transform : null);
+                added++;
+            }
             added += Ensure<SteamManager>(go);
             added += Ensure<SteamLobbyBootstrap>(go);
             added += Ensure<FacepunchTransport>(go);
@@ -777,6 +1234,14 @@ namespace Probation.EditorTools
                 added++;
             }
 
+            // Repairable rather than merely reportable: this one is new enough that every prefab
+            // built before it is missing it, and the symptom is a silent right mouse button.
+            if (!EnsurePlayerCanBrace())
+            {
+                Debug.LogError("[Verify] No Player prefab at all. Run step 2.");
+                problems++;
+            }
+
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (prefab != null)
             {
@@ -785,6 +1250,7 @@ namespace Probation.EditorTools
                     (typeof(PlayerCarry), nameof(PlayerCarry)),
                     (typeof(CursorLock), nameof(CursorLock)),
                     (typeof(PlayerNetworkSetup), nameof(PlayerNetworkSetup)),
+                    (typeof(PlayerBrace), nameof(PlayerBrace)),
                 })
                 {
                     if (prefab.GetComponent(type) != null) continue;
@@ -793,7 +1259,8 @@ namespace Probation.EditorTools
                 }
             }
 
-            int beds = Object.FindObjectsByType<WardBed>(FindObjectsSortMode.None).Length;
+            int beds = Object.FindObjectsByType<OperatingBay>(FindObjectsSortMode.None).Length
+                     + Object.FindObjectsByType<Gurney>(FindObjectsSortMode.None).Length;
             int zones = Object.FindObjectsByType<WardZone>(FindObjectsSortMode.None).Length;
             int sterilisers = Object.FindObjectsByType<Steriliser>(FindObjectsSortMode.None).Length;
             if (beds == 0 || zones < 2 || sterilisers == 0)
@@ -859,6 +1326,34 @@ namespace Probation.EditorTools
         /// A build boots whatever sits at index 0. The URP template leaves SampleScene there,
         /// so a fresh build opens an empty template scene and looks broken.
         /// </summary>
+        /// <summary>
+        /// Register a scene in Build Settings so it is a real part of the project rather than a
+        /// loose file - it shows up in File > Build Settings, it can be loaded by name, and it
+        /// exists in a player build.
+        ///
+        /// Appended, never inserted at 0. Index 0 is what a build boots into, and that has to stay
+        /// Greybox: a build that opens on the testbed is a build nobody can play.
+        /// </summary>
+        private static void AddSceneToBuild(string path)
+        {
+            var scenes = new System.Collections.Generic.List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+
+            int index = scenes.FindIndex(x => x.path == path);
+            if (index >= 0)
+            {
+                if (scenes[index].enabled) return;
+
+                scenes[index].enabled = true;
+                EditorBuildSettings.scenes = scenes.ToArray();
+                Debug.Log($"[Probation] Re-enabled {path} in Build Settings.");
+                return;
+            }
+
+            scenes.Add(new EditorBuildSettingsScene(path, true));
+            EditorBuildSettings.scenes = scenes.ToArray();
+            Debug.Log($"[Probation] Added {path} to Build Settings at index {scenes.Count - 1}.");
+        }
+
         private static void PutGreyboxFirstInBuild()
         {
             var scenes = new System.Collections.Generic.List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);

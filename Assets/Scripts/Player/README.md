@@ -543,3 +543,91 @@ step you are - procedure information, not patient information. It never leaks co
 This is why the monitor cart matters. It is the only way to know a patient is deteriorating
 without standing over them, there is one of it, and it has to be wheeled to whoever you have
 decided is worth watching.
+
+---
+
+# Intake is a placeholder
+
+Patients currently appear on trolleys standing in the intake bay: three seeded the moment the
+night starts, then more on a tightening timer.
+
+That is deliberately the cheap version. **The intended design is that patients arrive** - walking
+into a waiting room under their own power, or wheeled in from ambulances - rather than
+materialising on furniture. An arrival you can watch happen is worth building once the loop
+itself is proven; it is not worth building before anyone has played a full night.
+
+What the current version does get right, and what should survive whatever replaces it: arrivals
+only land on a trolley parked in intake, so every gurney wheeled to a theatre or out to
+discharge is one that can no longer receive anybody. Returning empty trolleys has to stay a job.
+
+---
+
+# Brace
+
+The one idea in the control scheme: **the mouse does two jobs and never both at once.**
+Unbraced it is your head. Braced it is your hands.
+
+Hold RMB with an instrument in hand while looking at a surface within `braceReach` (1.6 m).
+The camera locks, the feet plant, the view leans in, and mouse delta stops driving the pivot
+and starts driving a cursor on the surface you leaned in against.
+
+## What it does not do
+
+`PlayerBrace` never touches the held tool, its rigidbody, or `PlayerCarry`. It moves the
+**hand anchor**, and `PlayerCarry.TrackToHand` drags the instrument there against a
+mass-derived speed ceiling that already existed.
+
+That is why a heavy instrument lags behind the cursor and trails on a fast drag - and why
+yanking the mouse makes the tip overshoot. Tearing is not simulated anywhere. It falls out of
+the carry physics.
+
+## The plane is frozen on entry
+
+A brace raycasts once, captures the surface, and never tracks the camera again. So **where you
+stood and what you were looking at before you leaned in is the decision** - and the cursor is
+clamped to +/-0.20 m, which keeps a brace local. You work a site, not a patient.
+
+You cannot brace empty-handed, and you cannot brace facing open air.
+
+## What it sets on other components
+
+| Flag | Owner | Effect |
+|---|---|---|
+| `PlayerLook.Suspended` | brace | Look stops consuming mouse delta. Yaw/Pitch keep their values, so Locomotion's movement basis stays correct. |
+| `PlayerLocomotion.Planted` | brace | No steering, no jump, crouch frozen. **Deliberately not `IsDowned`** - that also kills the ride spring, and a braced intern must keep springing to their ride height or they sink through the floor. |
+
+Both are cleared the instant you release RMB, not when the lean finishes. A quarter second of
+dead controls on exit reads as input lag. The hand blends back out in pivot-local space, so it
+simply follows the camera home and no drift accumulates over a hundred braces.
+
+## Tool tips
+
+Instruments now have a working end (`ToolTip`, on the far local +Z face). Before this there was
+no notion of which end of a tool was which - the old step evaluator accepted any collider on any
+held tool, so a scalpel held backwards worked exactly as well as one held properly.
+
+Aiming is the point of bracing, and you cannot aim something that has no point.
+
+## Trying it
+
+`Probation > Setup > 8 - Build Surgery Testbed` writes `Assets/Scenes/Surgery_Testbed.unity`.
+Press Play - `NetworkBootstrap.autoHost` starts the host on its own.
+
+`E` to take a scalpel from the bench, walk to a station, hold RMB to brace, hold LMB and drag
+along the seam. **Slowly.** The resistance is audible before the tear. `R` closes every seam, so
+you can compare a careful drag against a hurried one without restarting play mode.
+
+**Three stations** - flat, tilted 20 degrees, upright 75 degrees. The work plane is captured from
+a raycast normal and then frozen, and a single flat table would never prove that generalises.
+
+**Three scalpel weights** - 0.12, 0.30 and 0.90 kg, same shape and same tip. PlayerCarry's speed
+ceiling is `maxCarrySpeed / (mass * massDrag)`, so these should feel genuinely different in the
+hand. If they do not, `massDrag` is the first value to reach for.
+
+The testbed still runs a NetworkManager. `Grabbable` and `PlayerCarry` are `NetworkBehaviour`s
+and are completely inert without one, so a "no netcode" scene would have tested nothing.
+
+## Not networked yet
+
+Seam cut state is local. In multiplayer you would see your own cut and nobody else's. That is
+deliberate for a feel test and is the first thing PR 2 fixes.

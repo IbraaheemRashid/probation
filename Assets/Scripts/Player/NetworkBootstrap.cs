@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -16,6 +17,19 @@ namespace Probation.Player
     {
         [SerializeField] private string address = "127.0.0.1";
         [SerializeField] private ushort port = 7777;
+
+        [Tooltip("Start hosting the moment the scene loads, with no panel. For single-player spike scenes, where clicking Host every time is friction between you and the thing you are trying to feel.")]
+        [SerializeField] private bool autoHost;
+
+        private void Start()
+        {
+            if (!autoHost) return;
+
+            var net = NetworkManager.Singleton;
+            if (net == null || net.IsListening) return;
+
+            if (ApplyConnectionData(asHost: true)) net.StartHost();
+        }
 
         private void OnGUI()
         {
@@ -49,6 +63,7 @@ namespace Probation.Player
             {
                 string role = net.IsHost ? "Host" : net.IsServer ? "Server" : "Client";
                 GUILayout.Label($"{role} - client {net.LocalClientId}");
+                if (net.IsHost) GUILayout.Label($"port {port}");
                 GUILayout.Label($"Connected: {net.ConnectedClientsIds.Count}");
 
                 GUILayout.Space(6f);
@@ -57,6 +72,31 @@ namespace Probation.Player
             }
 
             GUILayout.EndArea();
+        }
+
+        private const int PortSearchRange = 10;
+
+        /// <summary>
+        /// First port from <paramref name="start"/> that can actually be bound, or 0. Tested by
+        /// binding it briefly ourselves - UnityTransport gives no way to ask in advance, and
+        /// finding out through StartHost means eating a transport failure and a shutdown cascade.
+        /// </summary>
+        private static ushort FirstFreePort(ushort start)
+        {
+            for (int candidate = start; candidate <= start + PortSearchRange && candidate <= ushort.MaxValue; candidate++)
+            {
+                try
+                {
+                    using var probe = new UdpClient(candidate);
+                    return (ushort)candidate;
+                }
+                catch (SocketException)
+                {
+                    // In use. Try the next one.
+                }
+            }
+
+            return 0;
         }
 
         private bool ApplyConnectionData(bool asHost)
@@ -90,11 +130,33 @@ namespace Probation.Player
                                  "UnityTransport on this object. Assign it in the inspector to make it stick.");
             }
 
-            // A host binds to every interface, not to the address clients type in. Binding the
-            // server to 127.0.0.1 makes it unreachable from any other machine on the network,
-            // which is the difference between "works in the Editor" and "works with friends".
-            if (asHost) transport.SetConnectionData(address, port, "0.0.0.0");
-            else transport.SetConnectionData(address, port);
+            if (asHost)
+            {
+                // The Editor leaks its UDP socket between play sessions, so the port it used
+                // last time is often still held by Unity itself. Rather than making you restart
+                // the Editor, walk up until something is actually bindable.
+                ushort free = FirstFreePort(port);
+                if (free == 0)
+                {
+                    Debug.LogError($"[Probation] No free UDP port between {port} and {port + PortSearchRange}.");
+                    return false;
+                }
+
+                if (free != port)
+                    Debug.LogWarning($"[Probation] Port {port} was still held (usually a leaked socket " +
+                                     $"from a previous play session). Hosting on {free} instead - " +
+                                     "joiners need this number.");
+                port = free;
+
+                // A host binds every interface, not the address clients type in. Binding the
+                // server to 127.0.0.1 makes it unreachable from any other machine, which is the
+                // difference between "works in the Editor" and "works with friends".
+                transport.SetConnectionData(address, port, "0.0.0.0");
+            }
+            else
+            {
+                transport.SetConnectionData(address, port);
+            }
 
             Debug.Log($"[Probation] {(asHost ? "Hosting on" : "Connecting to")} {address}:{port}");
             return true;

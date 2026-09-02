@@ -20,6 +20,14 @@ namespace Probation.Player
         public bool Crouch { get; private set; }
         public bool Attack { get; private set; }
 
+        /// <summary>
+        /// True while Brace is held. The one input that changes what the mouse means: unbraced it
+        /// is your head, braced it is your hands. Nothing else in the game does two jobs.
+        /// </summary>
+        public bool Brace { get; private set; }
+        public bool BracePressed { get; private set; }
+        public bool BraceReleased { get; private set; }
+
         /// <summary>True only on the frame Interact went down.</summary>
         public bool InteractPressed { get; private set; }
 
@@ -45,7 +53,7 @@ namespace Probation.Player
 
         private InputActionAsset _ownCopy;
         private InputActionMap _map;
-        private InputAction _move, _look, _sprint, _crouch, _jump, _interact, _attack;
+        private InputAction _move, _look, _sprint, _crouch, _jump, _interact, _attack, _brace;
 
         private void Awake()
         {
@@ -74,6 +82,7 @@ namespace Probation.Player
             _jump = _map.FindAction("Jump", throwIfNotFound: true);
             _interact = _map.FindAction("Interact", throwIfNotFound: true);
             _attack = _map.FindAction("Attack", throwIfNotFound: true);
+            _brace = _map.FindAction("Brace", throwIfNotFound: true);
         }
 
         private void OnEnable() => _map?.Enable();
@@ -89,6 +98,7 @@ namespace Probation.Player
             Move = Look = Vector2.zero;
             Sprint = Crouch = Attack = false;
             InteractPressed = InteractHeld = InteractReleased = false;
+            Brace = BracePressed = BraceReleased = false;
         }
 
         private void Update()
@@ -103,6 +113,10 @@ namespace Probation.Player
             InteractPressed = _interact.WasPressedThisFrame();
             InteractHeld = _interact.IsPressed();
             InteractReleased = _interact.WasReleasedThisFrame();
+
+            Brace = _brace.IsPressed();
+            BracePressed = _brace.WasPressedThisFrame();
+            BraceReleased = _brace.WasReleasedThisFrame();
 
             if (_jump.WasPressedThisFrame())
                 JumpPressedAt = Time.time;
