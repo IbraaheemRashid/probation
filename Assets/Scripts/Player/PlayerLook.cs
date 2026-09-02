@@ -30,6 +30,16 @@ namespace Probation.Player
         public float Yaw { get; private set; }
         public float Pitch { get; private set; }
 
+        /// <summary>
+        /// Set by <see cref="PlayerBrace"/>. While true the mouse is driving an instrument instead
+        /// of the head, and this component must not touch the pivot.
+        ///
+        /// Yaw and Pitch keep their last values rather than being zeroed, so unbracing returns you
+        /// to exactly the view you leaned in from - and Locomotion's movement basis, which reads
+        /// Yaw, stays correct throughout.
+        /// </summary>
+        public bool Suspended { get; set; }
+
         /// <summary>Yaw-only rotation. Multiply a local move vector by this to get world space.</summary>
         public Quaternion YawRotation => Quaternion.Euler(0f, Yaw, 0f);
 
@@ -54,7 +64,7 @@ namespace Probation.Player
 
         private void Update()
         {
-            if (input == null) return;
+            if (input == null || Suspended) return;
 
             Vector2 look = input.Look;
 

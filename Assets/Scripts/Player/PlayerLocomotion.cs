@@ -92,6 +92,18 @@ namespace Probation.Player
         public float Encumbrance { get; set; }
 
         /// <summary>
+        /// Set by <see cref="PlayerBrace"/>. Your feet are planted: no steering, no jump, and the
+        /// crouch blend is frozen where it was.
+        ///
+        /// Deliberately NOT the same as <see cref="IsDowned"/>, which also kills the ride spring.
+        /// A braced intern must keep springing to their ride height, or they sink through the
+        /// floor while leaning over a patient. Crouch is frozen rather than blocked because the
+        /// blend drives eye height, and eye height moves the hand - which would slide the
+        /// instrument across the body without the mouse having moved.
+        /// </summary>
+        public bool Planted { get; set; }
+
+        /// <summary>
         /// 0 to 1. Sprinting spends it, standing still refills it, and carrying a patient
         /// spends it far faster.
         ///
@@ -156,7 +168,9 @@ namespace Probation.Player
             UpdateStamina();
 
             // Crouch blend is visual as much as physical, so drive it at framerate.
-            bool wantsCrouch = input != null && input.Crouch && !IsDowned;
+            bool wantsCrouch = Planted
+                ? IsCrouching                                  // frozen: see Planted
+                : input != null && input.Crouch && !IsDowned;
             if (!wantsCrouch && IsCrouching && !HasHeadroom()) wantsCrouch = true;
 
             IsCrouching = wantsCrouch;
@@ -211,7 +225,7 @@ namespace Probation.Player
                 ApplyRideSpring();
 
             ApplyMovement();
-            TryJump();
+            if (!Planted) TryJump();
             ApplyFallGravity();
         }
 
@@ -266,7 +280,7 @@ namespace Probation.Player
 
         private void ApplyMovement()
         {
-            Vector2 move = input != null ? input.Move : Vector2.zero;
+            Vector2 move = input != null && !Planted ? input.Move : Vector2.zero;
             Vector3 wish = look != null
                 ? look.FlatRight * move.x + look.FlatForward * move.y
                 : transform.right * move.x + transform.forward * move.y;

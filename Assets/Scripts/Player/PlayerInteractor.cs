@@ -31,6 +31,13 @@ namespace Probation.Player
         /// <summary>Where this intern is looking. Used by held instruments that need to aim.</summary>
         public Transform ViewSource => viewSource;
 
+        // Exposed so a diagnostic overlay can repeat this exact cast. Focused is only ever set
+        // for something you CAN take, so it cannot answer "am I even pointing at the scalpel?" -
+        // and that is the question worth asking when nothing is picking up.
+        public float Reach => reach;
+        public float CastRadius => castRadius;
+        public LayerMask InteractMask => interactMask;
+
         private void Reset()
         {
             input = GetComponent<PlayerInputReader>();
