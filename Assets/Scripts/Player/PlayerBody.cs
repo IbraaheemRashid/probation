@@ -98,9 +98,9 @@ namespace Probation.Player
                           new Vector3(0f, 0f, 0.06f), Vector3.one * (radius * 1.05f));
 
             _leftHand = Part(PrimitiveType.Cube, "Hand L", headParent,
-                             new Vector3(-restHand.x, restHand.y, restHand.z), Vector3.one * 0.12f);
+                             new Vector3(-restHand.x, restHand.y, restHand.z), Vector3.one * HandSize);
             _rightHand = Part(PrimitiveType.Cube, "Hand R", headParent,
-                              restHand, Vector3.one * 0.12f);
+                              restHand, Vector3.one * HandSize);
         }
 
         private static Transform Part(PrimitiveType shape, string name, Transform parent,
@@ -276,11 +276,60 @@ namespace Probation.Player
 
             if (target == null) return false;
 
+            // Sit the hand ON the thing, not in it.
+            //
+            // An object's transform is its centre, and a hand parked there is a block buried
+            // inside a scalpel - which reads as two things intersecting rather than as a grip.
+            // Backing off along the line towards the wrist by the object's own extent puts the
+            // hand against the surface facing you, which is where a hand would actually be.
+            //
+            // It scales with the object for free: a tool gets held near its middle because it is
+            // small, and a gurney gets held at the near rail because that is where its surface
+            // is. No per-object data, and it stays right if anything is ever resized.
+            Vector3 centre = target.position;
+            Vector3 toWrist = _pivot.position - centre;
+
+            if (toWrist.sqrMagnitude > 1e-6f)
+            {
+                float distance = toWrist.magnitude;
+                Vector3 dir = toWrist / distance;
+
+                // Never back off further than the thing actually is. A gurney is nearly two
+                // metres long, so standing at one end puts its centre closer to you than its own
+                // extent - and the unclamped answer would place your hand somewhere behind your
+                // own shoulders.
+                float backoff = Mathf.Min(SurfaceOffset(target, dir) + HandSize * 0.5f,
+                                          distance * 0.85f);
+
+                centre += dir * backoff;
+            }
+
             // Clamped so a heavy object dragging behind you does not pull an arm out of its
             // socket, and so a desynced remote never throws a hand across the room.
-            local = Vector3.ClampMagnitude(_pivot.InverseTransformPoint(target.position), maxReach);
+            local = Vector3.ClampMagnitude(_pivot.InverseTransformPoint(centre), maxReach);
             return true;
         }
+
+        /// <summary>
+        /// How far the object's surface is from its centre, in one direction.
+        ///
+        /// The standard support function for an axis-aligned box, which is what
+        /// <see cref="Renderer.bounds"/> gives - so an elongated tool held end-on returns its
+        /// long extent and the same tool held side-on returns its short one, without either
+        /// needing to be authored.
+        /// </summary>
+        private static float SurfaceOffset(Transform target, Vector3 direction)
+        {
+            var renderer = target.GetComponentInChildren<Renderer>();
+            if (renderer == null) return 0f;
+
+            Vector3 extents = renderer.bounds.extents;
+            return Mathf.Abs(extents.x * direction.x)
+                 + Mathf.Abs(extents.y * direction.y)
+                 + Mathf.Abs(extents.z * direction.z);
+        }
+
+        private const float HandSize = 0.12f;
 
         private Grabbable _held;
 
