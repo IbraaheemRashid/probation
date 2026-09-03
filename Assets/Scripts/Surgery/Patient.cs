@@ -24,6 +24,7 @@ namespace Probation.Surgery
     [RequireComponent(typeof(NetworkObject))]
     public class Patient : NetworkBehaviour
     {
+        [Tooltip("Fallback only. Intake assigns the real species from the casebook at admission.")]
         [SerializeField] private Species species;
         [Tooltip("Seconds of bleeding this patient has already taken before the shift starts.")]
         [SerializeField] private float startingHarm;
@@ -33,11 +34,32 @@ namespace Probation.Surgery
         private readonly NetworkVariable<float> _heartRate = new(70f);
         private readonly NetworkVariable<bool> _conscious = new();
 
+        // Who this one is tonight. Indices rather than references because a NetworkVariable
+        // cannot carry a ScriptableObject - see Casebook for what that costs us.
+        private readonly NetworkVariable<int> _speciesIndex = new(-1);
+        private readonly NetworkVariable<int> _conditionIndex = new(-1);
+
         public PatientState State => _state.Value;
         public float Harm => _harm.Value;
         public float HeartRate => _heartRate.Value;
         public bool IsDead => _state.Value == PatientState.Dead;
-        public Species Species => species;
+
+        /// <summary>
+        /// What they are. Resolved through the casebook, falling back to the serialized field so
+        /// a patient dropped into a scene by hand still behaves rather than null-referencing.
+        /// </summary>
+        public Species Species => Casebook.Active?.SpeciesAt(_speciesIndex.Value) ?? species;
+
+        /// <summary>What is wrong with them. Null until intake admits them with a case.</summary>
+        public Condition Condition => Casebook.Active?.ConditionAt(_conditionIndex.Value);
+
+        /// <summary>
+        /// How ill they look before anybody has touched them.
+        ///
+        /// Deliberately separate from <see cref="Harm"/>: harm is the score, and a patient who
+        /// arrived looking dreadful has not been hurt by anyone yet.
+        /// </summary>
+        public float PresentingSickness => Condition != null ? Condition.presentingSickness : 0f;
 
         /// <summary>
         /// True pain and consciousness state. Readable only through the scanner, which is one
@@ -62,7 +84,7 @@ namespace Probation.Surgery
 
             if (!IsServer) return;
             _harm.Value = Mathf.Clamp01(startingHarm);
-            _heartRate.Value = species != null ? species.restingHeartRate : 70f;
+            _heartRate.Value = Species != null ? Species.restingHeartRate : 70f;
 
             // Patients arrive awake. Somebody has to put them under, and if nobody does then
             // every step of the operation is performed on a conscious alien.
@@ -106,7 +128,24 @@ namespace Probation.Surgery
             if (!IsServer || IsDead || HasLeft) return;
 
             if (_bleedRate > 0f)
-                ApplyHarmInternal(_bleedRate * Time.deltaTime, ulong.MaxValue, null);
+            {
+                // bleedOutSeconds was authored on day one and never read by anything. It earns
+                // its place here: a species that empties in twenty seconds makes an opened bleed
+                // a genuine emergency, one at ninety makes the same bleed a nuisance - and that
+                // changes which procedures are safe to run on whom, for one line.
+                float scale = Species != null && Species.bleedOutSeconds > 0.01f
+                    ? BaselineBleedOutSeconds / Species.bleedOutSeconds
+                    : 1f;
+
+                ApplyHarmInternal(_bleedRate * scale * Time.deltaTime, ulong.MaxValue, null);
+            }
+
+            // Whatever they walked in with gets worse while nobody is dealing with it. Leaving
+            // somebody in a corridor has to be a decision with a price, or triage is just a
+            // queue and the order you work in never matters.
+            var condition = Condition;
+            if (condition != null && condition.untreatedHarmPerSecond > 0f && !IsTreated)
+                ApplyHarmInternal(condition.untreatedHarmPerSecond * Time.deltaTime, ulong.MaxValue, null);
 
             UpdateVitals();
         }
@@ -183,16 +222,24 @@ namespace Probation.Surgery
         /// Wheel a fresh one in. Beds are reused across the night - the alternative is spawning
         /// network prefabs, and a bed you reset is the same thing with less machinery.
         /// </summary>
-        public void Admit()
+        public void Admit(Species assigned, Condition condition)
         {
             if (!IsServer) return;
 
+            var book = Casebook.Active;
+
+            // Set before anything reads Species or Condition below - the accessors resolve
+            // through these indices, so ordering here is not cosmetic.
+            _speciesIndex.Value = book != null && assigned != null ? book.IndexOf(assigned) : -1;
+            _conditionIndex.Value = book != null && condition != null ? book.IndexOf(condition) : -1;
+
             HasLeft = false;
-            _bleedRate = 0f;
-            _harm.Value = Mathf.Clamp01(startingHarm);
-            _heartRate.Value = species != null ? species.restingHeartRate : 70f;
-            _conscious.Value = true;
-            SetState(PatientState.Stable);
+            _bleedRate = condition != null ? Mathf.Max(0f, condition.arrivesBleedingRate) : 0f;
+            _harm.Value = Mathf.Clamp01(condition != null ? condition.arrivesHarmed : startingHarm);
+            _heartRate.Value = Species != null ? Species.restingHeartRate : 70f;
+            _conscious.Value = condition == null || !condition.arrivesUnconscious;
+
+            SetState(_bleedRate > 0f ? PatientState.Bleeding : PatientState.Stable);
         }
 
         /// <summary>The trolley this one is on, if any. Set by Gurney.</summary>
@@ -202,14 +249,15 @@ namespace Probation.Surgery
         public bool HasLeft { get; private set; } = true;
 
         /// <summary>Their procedure is done and they are alive. The only thing the quota counts.</summary>
-        public bool IsTreated
-        {
-            get
-            {
-                var operation = GetComponent<Operation>();
-                return !IsDead && operation != null && operation.Finished;
-            }
-        }
+        public bool IsTreated => !IsDead && _operation != null && _operation.Finished;
+
+        /// <summary>Cached because the untreated-harm tick asks every frame, on every patient.</summary>
+        private Operation _operation;
+
+        /// <summary>The rate bleedOutSeconds is expressed against. A species at 45 bleeds as authored.</summary>
+        private const float BaselineBleedOutSeconds = 45f;
+
+        private void Awake() => _operation = GetComponent<Operation>();
 
         /// <summary>
         /// Leave the ward. The body is parked out of the way and its bed freed, ready to be
@@ -236,7 +284,7 @@ namespace Probation.Surgery
         private static readonly Vector3 HoldingPosition = new(0f, -40f, 0f);
 
         /// <summary>Species rule that mutates every procedure without any new procedure code.</summary>
-        public bool ObjectsToMetal => species != null && species.allergicToMetal;
+        public bool ObjectsToMetal => Species != null && Species.allergicToMetal;
 
         private void Die(ulong byClientId)
         {
@@ -262,8 +310,13 @@ namespace Probation.Surgery
 
         private void UpdateVitals()
         {
-            float resting = species != null ? species.restingHeartRate : 70f;
-            float critical = species != null ? species.criticalHeartRate : 190f;
+            // What is wrong with them shifts the baseline, which is how one number comes to mean
+            // two things. 110 bpm is alarming on a Thoracid that rests at 68 and thoroughly dull
+            // on a Vithrid that rests at 112 - same reading, opposite conclusion, and the only
+            // way to tell is to know which one you are looking at.
+            float resting = (Species != null ? Species.restingHeartRate : 70f)
+                            + (Condition != null ? Condition.restingRateOffset : 0f);
+            float critical = Species != null ? Species.criticalHeartRate : 190f;
 
             // Climbs with harm. This is the room's shared clock and the signature sound of the
             // game - a rate rising while three people argue about which organ is which.

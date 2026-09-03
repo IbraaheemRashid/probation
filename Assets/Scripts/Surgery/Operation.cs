@@ -20,7 +20,6 @@ namespace Probation.Surgery
     [RequireComponent(typeof(Patient))]
     public class Operation : NetworkBehaviour
     {
-        [SerializeField] private Procedure procedure;
         [Tooltip("Seconds before a wrong tool at the site can hurt the patient again.")]
         [SerializeField] private float wrongToolCooldown = 1.25f;
 
@@ -28,7 +27,21 @@ namespace Probation.Surgery
         private readonly NetworkVariable<float> _progress = new();
         private readonly NetworkVariable<bool> _finished = new();
 
-        public Procedure Procedure => procedure;
+        // Which procedure this bed is running, as a casebook index. There is deliberately no
+        // serialized default: a procedure authored into the scene would silently outrank the
+        // one somebody charted, and the resulting patient would be treated for whatever the
+        // level designer last thought.
+        private readonly NetworkVariable<int> _procedureIndex = new(-1);
+
+        /// <summary>
+        /// What the ward has decided to do. Replicated - the operation HUD reads the step list
+        /// on every client, not just the host.
+        /// </summary>
+        public Procedure Procedure => Casebook.Active?.ProcedureAt(_procedureIndex.Value);
+
+        /// <summary>Whether anybody has committed this patient to a procedure yet.</summary>
+        public bool HasProcedure => Procedure != null;
+
         public int StepIndex => _stepIndex.Value;
         public float Progress => _progress.Value;
         public bool Finished => _finished.Value;
@@ -36,10 +49,16 @@ namespace Probation.Surgery
         /// <summary>Whether this patient is currently somewhere you are allowed to work.</summary>
         public bool InBay { get; private set; }
 
-        public ProcedureStep CurrentStep =>
-            procedure != null && _stepIndex.Value < procedure.steps.Count
-                ? procedure.steps[_stepIndex.Value]
-                : null;
+        public ProcedureStep CurrentStep
+        {
+            get
+            {
+                var running = Procedure;
+                return running != null && _stepIndex.Value < running.steps.Count
+                    ? running.steps[_stepIndex.Value]
+                    : null;
+            }
+        }
 
         private Patient _patient;
         private SurgerySite[] _sites;
@@ -58,7 +77,11 @@ namespace Probation.Surgery
         private void FixedUpdate()
         {
             if (!IsServer || _finished.Value || _patient.IsDead) return;
-            if (procedure == null || procedure.steps.Count == 0) return;
+
+            // Nothing happens until somebody has written the chart. A patient nobody has
+            // committed to a procedure is not one the ward may start cutting.
+            var running = Procedure;
+            if (running == null || running.steps.Count == 0) return;
 
             // You cannot operate in a corridor. This is what makes wheeling somebody to a bay a
             // job rather than a formality, and it is the reason the map has rooms in it.
@@ -171,7 +194,10 @@ namespace Probation.Surgery
 
             _stepIndex.Value++;
 
-            if (_stepIndex.Value < procedure.steps.Count)
+            var running = Procedure;
+            if (running == null) return;
+
+            if (_stepIndex.Value < running.steps.Count)
             {
                 ShiftDirector.Instance?.Announce($"{step.displayName} - done");
                 return;
@@ -179,10 +205,10 @@ namespace Probation.Surgery
 
             _finished.Value = true;
             _patient.Stabilise();
-            ShiftDirector.Instance?.Announce($"Patient stabilised. {procedure.displayName} complete.");
+            ShiftDirector.Instance?.Announce($"Patient stabilised. {running.displayName} complete.");
 
             foreach (ulong holder in _holders)
-                IncidentLog.Record(holder, $"completed the {procedure.displayName} - patient survived");
+                IncidentLog.Record(holder, $"completed the {running.displayName} - patient survived");
         }
 
         /// <summary>Start the procedure over for a newly admitted patient.</summary>
@@ -192,14 +218,59 @@ namespace Probation.Surgery
             _stepIndex.Value = 0;
             _progress.Value = 0f;
             _finished.Value = false;
+            _procedureIndex.Value = -1;
+
+            // A bed is reused all night, so anything not cleared here leaks into the next
+            // occupant. _usedThisStep still holds the last patient's instruments, which means
+            // their first completed step soils tools nobody has touched; the harm cooldown
+            // carries over, so the first mistake on a fresh patient can be free.
+            _usedThisStep.Clear();
+            _nextHarmAllowedAt = 0f;
+        }
+
+        /// <summary>
+        /// Commit this bed to a procedure.
+        ///
+        /// Called by the chart and by nothing else. In particular it is never called by anything
+        /// that knows what is actually wrong with the patient - the moment the game assigns the
+        /// correct procedure by itself, diagnosis stops being a decision anybody makes.
+        ///
+        /// Changing your mind throws away step progress, deliberately. A chart you can swap for
+        /// free on the last step is a way to try every procedure in turn until one sticks.
+        /// </summary>
+        public void Assign(Procedure next)
+        {
+            if (!IsServer) return;
+
+            var book = Casebook.Active;
+            int index = book != null && next != null ? book.IndexOf(next) : -1;
+            if (index == _procedureIndex.Value) return;
+
+            _procedureIndex.Value = index;
+            _stepIndex.Value = 0;
+            _progress.Value = 0f;
+            _finished.Value = false;
+            _usedThisStep.Clear();
+            _nextHarmAllowedAt = 0f;
         }
 
         private Transform SiteFor(string siteId)
         {
-            if (_sites == null) return null;
-            foreach (var site in _sites)
-                if (site != null && site.siteId == siteId) return site.transform;
+            if (_sites != null)
+                foreach (var site in _sites)
+                    if (site != null && site.siteId == siteId) return site.transform;
+
+            // Otherwise this fails completely silently: Evaluate just returns, the patient sits
+            // there untreatable, and the HUD goes on cheerfully naming a step that can never
+            // complete. Warn once per missing site, so a typo in a procedure asset costs a line
+            // in the console rather than a playtest.
+            if (_warnedSites.Add(siteId))
+                Debug.LogWarning($"[Operation] {name}: no SurgerySite '{siteId}' on this patient. " +
+                                 "That step can never complete.", this);
+
             return null;
         }
+
+        private readonly HashSet<string> _warnedSites = new();
     }
 }

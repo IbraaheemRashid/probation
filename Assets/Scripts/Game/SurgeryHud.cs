@@ -133,7 +133,7 @@ namespace Probation.Game
             if (!holdingScanner) return;
 
             Patient target = PatientInSights(local);
-            var rect = new Rect(Screen.width * 0.5f - 200f, Screen.height - 210f, 400f, 108f);
+            var rect = new Rect(Screen.width * 0.5f - 200f, Screen.height - 272f, 400f, 170f);
 
             if (target == null)
             {
@@ -143,15 +143,33 @@ namespace Probation.Game
                 return;
             }
 
-            // Everything, to whoever is holding it. The asymmetry is not who you are - it is
-            // that there is one scanner, and holding it means not holding a scalpel.
-            string diagnosis = target.Species != null ? target.Species.diagnosisText : "unidentified";
+            // Signs, and never the answer.
+            //
+            // This used to print Species.diagnosisText, which named the condition outright - so
+            // the scanner was a lookup and there was nothing to work out. It now reports what an
+            // instrument can actually see, plus the species, and leaves the two to be put
+            // together by somebody. That last step is the game.
+            string species = target.Species != null ? target.Species.displayName : "unidentified";
+            var condition = target.Condition;
 
             GUILayout.BeginArea(rect, GUI.skin.box);
             GUILayout.Label($"<b>SCANNER</b>   {target.State}", _label);
+            GUILayout.Label($"species      <b>{species}</b>", _label);
             GUILayout.Label($"heart rate   {target.HeartRate:0} bpm", _label);
             GUILayout.Label($"pain state   <b>{(target.IsConscious ? "AWAKE - it can feel this" : "under")}</b>", _label);
-            GUILayout.Label($"diagnosis    <b>{diagnosis}</b>", _label);
+
+            if (condition == null || condition.scannerLines.Length == 0)
+            {
+                GUILayout.Label("signs        nothing the scanner can see", _label);
+            }
+            else
+            {
+                for (int i = 0; i < condition.scannerLines.Length; i++)
+                    GUILayout.Label(i == 0
+                        ? $"signs        {condition.scannerLines[i]}"
+                        : $"             {condition.scannerLines[i]}", _label);
+            }
+
             GUILayout.EndArea();
         }
 

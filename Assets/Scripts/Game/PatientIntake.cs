@@ -26,7 +26,26 @@ namespace Probation.Game
         [Tooltip("Never fill every trolley - leave somewhere to put the next one.")]
         [SerializeField] private int leaveFree = 1;
 
+        [Tooltip("Every species, condition and procedure in the game. Assigned by ProbationSetup.")]
+        [SerializeField] private Casebook casebook;
+
         private float _nextArrival;
+
+        /// <summary>Rolls the night's arrivals. Seeded per night so a bad one can be replayed.</summary>
+        private System.Random _rng = new(1);
+
+        /// <summary>Last case drawn, so an immediate repeat can be rerolled once.</summary>
+        private Condition _lastCondition;
+
+        private bool _warnedNoCasebook;
+
+        private void Awake()
+        {
+            // Every client needs this, not only the host. Patients replicate their species and
+            // condition as indices into the casebook's lists, so a client without one resolves
+            // every patient in the ward to nothing at all.
+            if (casebook != null) Casebook.Active = casebook;
+        }
 
         private void Update()
         {
@@ -59,6 +78,13 @@ namespace Probation.Game
             if (_seededForDay == day) return;
 
             _seededForDay = day;
+
+            // One seed per night, so the host rolls a night two groups can argue about by
+            // number. A different prime to ComplicationDirector's, or intake and the emergency
+            // ladder would march in step all night.
+            _rng = new System.Random(day * 6151);
+            _lastCondition = null;
+
             for (int i = 0; i < startingPatients; i++)
                 if (!TryAdmit()) break;
 
@@ -106,10 +132,63 @@ namespace Probation.Game
             }
 
             if (waiting == null) return false;
+            if (!TryDrawCase(out var drawnSpecies, out var drawnCondition)) return false;
 
-            waiting.Admit();
-            waiting.GetComponent<Operation>()?.Restart();
+            waiting.Admit(drawnSpecies, drawnCondition);
+
+            var operation = waiting.GetComponent<Operation>();
+            operation?.Restart();
+
+            // TEMPORARY SCAFFOLD. Hands the ward the correct answer so a night is playable
+            // before the chart exists. Delete this the moment PatientChart lands - a game that
+            // assigns the right procedure by itself has made diagnosis decorative, which is
+            // precisely the thing this whole system exists to stop.
+            operation?.Assign(drawnCondition != null ? drawnCondition.TreatmentFor(drawnSpecies) : null);
+
             target.Load(waiting);
+            return true;
+        }
+
+        /// <summary>
+        /// Roll the next case, rejecting an immediate repeat once.
+        ///
+        /// Without that reroll the three seeded openers land on the same case far more often
+        /// than a player reads as random, and the first thing anybody learns about the ward is
+        /// that it does not vary.
+        /// </summary>
+        private bool TryDrawCase(out Species drawnSpecies, out Condition drawnCondition)
+        {
+            drawnSpecies = null;
+            drawnCondition = null;
+
+            var director = ShiftDirector.Instance;
+            if (director == null) return false;
+
+            var book = Casebook.Active;
+            if (book == null)
+            {
+                // Loud, because the symptom is otherwise indistinguishable from a quiet night:
+                // no patient is ever admitted, nothing errors, and the ward simply stays empty.
+                if (!_warnedNoCasebook)
+                {
+                    _warnedNoCasebook = true;
+                    Debug.LogError("[Intake] No casebook assigned - nobody can be admitted. " +
+                                   "Run Probation > Setup > 7, or Probation > Verify and Repair Scene.", this);
+                }
+
+                return false;
+            }
+
+            if (!book.TryDraw(director.Day, _rng, out drawnSpecies, out drawnCondition)) return false;
+
+            if (drawnCondition == _lastCondition
+                && book.TryDraw(director.Day, _rng, out var second, out var secondCondition))
+            {
+                drawnSpecies = second;
+                drawnCondition = secondCondition;
+            }
+
+            _lastCondition = drawnCondition;
             return true;
         }
 
