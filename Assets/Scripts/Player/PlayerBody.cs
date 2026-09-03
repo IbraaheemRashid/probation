@@ -27,10 +27,16 @@ namespace Probation.Player
     [RequireComponent(typeof(PlayerNetworkSetup))]
     public class PlayerBody : MonoBehaviour
     {
-        [Header("Rest pose, relative to the camera pivot")]
-        [SerializeField] private Vector3 restHand = new(0.34f, -0.5f, 0.12f);
-        [Tooltip("Where the hands go when they are full. Forward and together - the shape of somebody carrying.")]
-        [SerializeField] private Vector3 busyHand = new(0.14f, -0.28f, 0.52f);
+        // The camera sits exactly on the CameraPivot, so these are offsets from your own eye and
+        // both of them have to stay inside a 70 degree frustum or you cannot see your own hands.
+        // Arms genuinely at your sides is out of view by a mile: at (0.34, -0.5, 0.12) a hand is
+        // 70 degrees off-axis horizontally and 76 vertically, which is why the first version of
+        // this was invisible. HandAnchor at (0.25, -0.2, 0.45) is the proven in-view reference.
+        [Header("Hand pose, relative to the camera pivot")]
+        [Tooltip("Empty hands. Low and wide, but still in front of you - a real arms-down pose cannot be seen in first person.")]
+        [SerializeField] private Vector3 restHand = new(0.30f, -0.24f, 0.42f);
+        [Tooltip("Hands full. Drawn in around whatever is at the HandAnchor.")]
+        [SerializeField] private Vector3 busyHand = new(0.17f, -0.19f, 0.48f);
         [SerializeField] private float handEase = 12f;
 
         private Transform _pivot;
@@ -99,11 +105,35 @@ namespace Probation.Player
             var collider = go.GetComponent<Collider>();
             if (collider != null) Destroy(collider);
 
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer != null) renderer.sharedMaterial = Shared();
+
             go.transform.SetParent(parent, false);
             go.transform.localPosition = localPosition;
             go.transform.localScale = localScale;
             return go.transform;
         }
+
+        /// <summary>
+        /// One material for every part of every player.
+        ///
+        /// CreatePrimitive hands out the built-in render pipeline's default material, which in a
+        /// URP project has no valid shader and renders as flat magenta. A MaterialPropertyBlock
+        /// cannot rescue that - there is no shader left to set a property on - so the colour work
+        /// below would have silently done nothing on top of an unmissable pink capsule.
+        /// </summary>
+        private static Material Shared()
+        {
+            if (_shared != null) return _shared;
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+
+            _shared = new Material(shader) { name = "PlayerBody (runtime)", hideFlags = HideFlags.DontSave };
+            return _shared;
+        }
+
+        private static Material _shared;
 
         // ---------------------------------------------------------------- who is who
 
