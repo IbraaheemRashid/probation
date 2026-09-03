@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff7187d31e6e41ae9f21d4e7bfc4a069, type: 3}
+  m_Name: Condition_Laceration
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Condition
+  id: laceration
+  displayName: open laceration
+  scannerLines:
+  - pressure falling
+  - focal source at torso
+  - no mass detected
+  restingRateOffset: 18
+  presentingSickness: 0.2
+  arrivesUnconscious: 0
+  arrivesBleedingRate: 0.012
+  arrivesHarmed: 0.08
+  untreatedHarmPerSecond: 0.006
+  answers:
+  - species: {fileID: 0}
+    treatment: {fileID: 11400000, guid: c8265c54fc3a8df4ab856b99e6f94357, type: 2}
+    reliefIfCorrect: 0.45
+    harmPerWrongStep: 0.05
+    harmIfOperated: 0
+    fragilityIfWrong: 0.5
+    reviewLineWrong: ran the wrong procedure on a bleeder
+    reviewLineRight: closed somebody up
