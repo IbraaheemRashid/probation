@@ -27,15 +27,21 @@ namespace Probation.Player
     [RequireComponent(typeof(PlayerNetworkSetup))]
     public class PlayerBody : MonoBehaviour
     {
-        // The camera sits exactly on the CameraPivot, so these are offsets from your own eye and
-        // both of them have to stay inside a 70 degree frustum or you cannot see your own hands.
-        // Arms genuinely at your sides is out of view by a mile: at (0.34, -0.5, 0.12) a hand is
-        // 70 degrees off-axis horizontally and 76 vertically, which is why the first version of
-        // this was invisible. HandAnchor at (0.25, -0.2, 0.45) is the proven in-view reference.
+        // These poses are authored for how somebody else reads you, not for your own screen.
+        //
+        // One hand object has to serve two jobs that want opposite things. Third person wants
+        // anatomy - arms down when free, so an intern across the theatre reads as available.
+        // First person wants information, and "my own hands are empty" is not information: you
+        // already know. Compromising between the two gives a pose that is wrong for other people
+        // AND barely on your screen, which is exactly what the previous version did.
+        //
+        // So the pose stays anatomical, and the owner's hands are simply hidden while idle. You
+        // see your hands when they are doing something and not otherwise; everybody else sees
+        // arms that go up and down.
         [Header("Hand pose, relative to the camera pivot")]
-        [Tooltip("Empty hands. Low and wide, but still in front of you - a real arms-down pose cannot be seen in first person.")]
-        [SerializeField] private Vector3 restHand = new(0.30f, -0.24f, 0.42f);
-        [Tooltip("Hands full. Drawn in around whatever is at the HandAnchor.")]
+        [Tooltip("Empty hands, at your sides. Deliberately outside your own view - hidden for the owner anyway.")]
+        [SerializeField] private Vector3 restHand = new(0.34f, -0.5f, 0.1f);
+        [Tooltip("Hands full. Drawn in around whatever is at the HandAnchor, and in view of the owner.")]
         [SerializeField] private Vector3 busyHand = new(0.17f, -0.19f, 0.48f);
         [SerializeField] private float handEase = 12f;
 
@@ -167,13 +173,32 @@ namespace Probation.Player
             // Your own torso and head sit inside your own camera. The hands stay visible: seeing
             // them go out in front of you as you pick something up is the cheapest possible
             // confirmation that the game registered it.
-            if (!_net.IsOwner) return;
+            _isOwner = _net.IsOwner;
+            if (!_isOwner) return;
 
-            Hide(_torso);
-            Hide(_skull);
+            SetVisible(_torso, false);
+            SetVisible(_skull, false);
+            ShowOwnHands(false);
+        }
+
+        private void ShowOwnHands(bool visible)
+        {
+            _handsShown = visible;
+            SetVisible(_leftHand, visible);
+            SetVisible(_rightHand, visible);
+        }
+
+        private static void SetVisible(Transform part, bool visible)
+        {
+            if (part == null) return;
+
+            var renderer = part.GetComponent<Renderer>();
+            if (renderer != null) renderer.enabled = visible;
         }
 
         private bool _dressed;
+        private bool _isOwner;
+        private bool _handsShown = true;
 
         private void Paint(Color colour)
         {
@@ -183,14 +208,6 @@ namespace Probation.Player
 
             foreach (var renderer in GetComponentsInChildren<Renderer>(true))
                 renderer.SetPropertyBlock(block);
-        }
-
-        private static void Hide(Transform part)
-        {
-            if (part == null) return;
-
-            var renderer = part.GetComponent<Renderer>();
-            if (renderer != null) renderer.enabled = false;
         }
 
         private static readonly int BaseColour = Shader.PropertyToID("_BaseColor");
@@ -203,6 +220,11 @@ namespace Probation.Player
             if (!_dressed && _net != null && _net.IsSpawned) Dress();
 
             HandsFull = IsCarrying();
+
+            // Your own hands appear only while they are doing something. Idle hands would be a
+            // viewmodel telling you a fact you already have, in exchange for two blocks sitting
+            // in the corners of the screen all night. Everybody else sees them the whole time.
+            if (_isOwner && HandsFull != _handsShown) ShowOwnHands(HandsFull);
 
             // LateUpdate so look and locomotion have already moved the pivot this frame.
             Vector3 target = HandsFull ? busyHand : restHand;
