@@ -7649,11 +7649,8 @@ GameObject:
   - component: {fileID: 1027645592}
   - component: {fileID: 1027645591}
   - component: {fileID: 1027645594}
-  - component: {fileID: 1027645596}
   - component: {fileID: 1027645595}
   - component: {fileID: 1027645599}
-  - component: {fileID: 1027645598}
-  - component: {fileID: 1027645597}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -7832,66 +7829,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.SurgeryHud
   patientRange: 4
   scannerRange: 9
---- !u!114 &1027645596
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1027645586}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 692dad1888618ed458e2fa37120c5bfd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ShiftDirector
-  ShowTopMostFoldoutHeaderGroup: 1
-  shiftSeconds: 390
-  coverUpSeconds: 20
-  reviewSeconds: 20
-  baseQuota: 3
-  quotaGrowth: 1
-  maxStrikes: 3
-  shiftsPerWeek: 7
-  hospitalDeathLimit: 8
-  startHour: 20
-  shiftHours: 8
---- !u!114 &1027645597
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1027645586}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 61c09f9f6f4c0c843aa55b92484864ac, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ComplicationDirector
-  ShowTopMostFoldoutHeaderGroup: 1
-  hiccupGapMin: 18
-  hiccupGapMax: 34
-  codeGapMin: 70
-  codeGapMax: 120
-  codeBleedRate: 0.05
---- !u!114 &1027645598
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1027645586}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d2585d32930c1134980a8d7f2df820f2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.PatientIntake
-  ShowTopMostFoldoutHeaderGroup: 1
-  startingPatients: 3
-  firstArrivalAfter: 6
-  slowestGap: 26
-  fastestGap: 9
-  leaveFree: 1
-  casebook: {fileID: 11400000, guid: ec2f2b991b6f6e544af338f2a1394981, type: 2}
 --- !u!114 &1027645599
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8949,6 +8886,128 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1174907322}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1210417944
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1210417946}
+  - component: {fileID: 1210417945}
+  - component: {fileID: 1210417949}
+  - component: {fileID: 1210417948}
+  - component: {fileID: 1210417947}
+  m_Layer: 0
+  m_Name: Ward Systems
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1210417945
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1210417944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 4071045734
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  m_InScenePlacedDisabledByDefault: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  m_InScenePlaced: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!4 &1210417946
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1210417944}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1210417947
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1210417944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61c09f9f6f4c0c843aa55b92484864ac, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ComplicationDirector
+  ShowTopMostFoldoutHeaderGroup: 1
+  hiccupGapMin: 18
+  hiccupGapMax: 34
+  codeGapMin: 70
+  codeGapMax: 120
+  codeBleedRate: 0.05
+--- !u!114 &1210417948
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1210417944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d2585d32930c1134980a8d7f2df820f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.PatientIntake
+  ShowTopMostFoldoutHeaderGroup: 1
+  startingPatients: 3
+  firstArrivalAfter: 6
+  slowestGap: 26
+  fastestGap: 9
+  leaveFree: 1
+  casebook: {fileID: 11400000, guid: ec2f2b991b6f6e544af338f2a1394981, type: 2}
+--- !u!114 &1210417949
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1210417944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 692dad1888618ed458e2fa37120c5bfd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Game.ShiftDirector
+  ShowTopMostFoldoutHeaderGroup: 1
+  shiftSeconds: 390
+  coverUpSeconds: 20
+  reviewSeconds: 20
+  baseQuota: 3
+  quotaGrowth: 1
+  maxStrikes: 3
+  shiftsPerWeek: 7
+  hospitalDeathLimit: 8
+  startHour: 20
+  shiftHours: 8
 --- !u!1 &1214665826
 GameObject:
   m_ObjectHideFlags: 0
@@ -14499,3 +14558,4 @@ SceneRoots:
   - {fileID: 2046509021}
   - {fileID: 2035517490}
   - {fileID: 2057428119}
+  - {fileID: 1210417946}
