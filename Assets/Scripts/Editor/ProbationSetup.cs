@@ -651,6 +651,10 @@ namespace Probation.EditorTools
             for (int i = 0; i < 8; i++)
                 BuildPatient(t, $"Patient {i + 1}");
 
+            // Before looking for the intake, because this is what creates it in the right place.
+            var manager = Object.FindFirstObjectByType<NetworkManager>();
+            if (manager != null) BuildWardSystems(manager.gameObject);
+
             var intake = Object.FindFirstObjectByType<PatientIntake>();
             if (intake != null) SetRefs(intake, ("casebook", casebook));
 
@@ -1413,13 +1417,11 @@ namespace Probation.EditorTools
             added += Ensure<UnityTransport>(go);
             added += Ensure<NetworkBootstrap>(go);
             added += Ensure<NetworkDiagnostics>(go);
-            added += Ensure<ShiftDirector>(go);
             added += Ensure<SurgeryHud>(go);
             added += Ensure<ShiftHud>(go);
-            added += Ensure<PatientIntake>(go);
-            added += Ensure<ComplicationDirector>(go);
 
-            problems += VerifyCasebook(go);
+            added += BuildWardSystems(go);
+            problems += VerifyCasebook();
 
             // Wards built before the intake bay existed have no way to admit anybody, and the
             // symptom is simply that no patients ever appear. Repair it in place rather than
@@ -1520,9 +1522,9 @@ namespace Probation.EditorTools
         /// one produces a ward of patients with no species, no condition and no procedure - and
         /// not one error anywhere to say so. Everything here exists because the failure is silent.
         /// </summary>
-        private static int VerifyCasebook(GameObject managerObject)
+        private static int VerifyCasebook()
         {
-            var intake = managerObject.GetComponent<PatientIntake>();
+            var intake = Object.FindFirstObjectByType<PatientIntake>();
             if (intake == null) return 0;
 
             int problems = 0;
@@ -1631,6 +1633,70 @@ namespace Probation.EditorTools
             }
 
             return problems;
+        }
+
+        private const string WardSystemsName = "Ward Systems";
+
+        /// <summary>
+        /// Give the ward's directors something they can actually spawn on.
+        ///
+        /// ShiftDirector, PatientIntake and ComplicationDirector are NetworkBehaviours, and a
+        /// NetworkBehaviour only ever gets IsServer set inside UpdateNetworkProperties, which
+        /// runs from NetworkObject spawn and nowhere else. They were sitting on the
+        /// NetworkManager object, which has no NetworkObject and should never have one - so they
+        /// never spawned, IsServer stayed false for the whole session, and every Update in all
+        /// three returned on its first line.
+        ///
+        /// The symptom was a ward that started, drew a HUD, spawned a player and then simply did
+        /// nothing forever: no patients, no shift clock, no complications, no announcements, and
+        /// not one error anywhere to say why. Their own spawnable object fixes all of it.
+        /// </summary>
+        private static int BuildWardSystems(GameObject managerObject)
+        {
+            var systems = GameObject.Find(WardSystemsName);
+            if (systems == null)
+            {
+                systems = new GameObject(WardSystemsName);
+                Debug.Log($"[Verify] Created '{WardSystemsName}' - the ward's directors had nothing to spawn on.");
+            }
+
+            if (systems.GetComponent<NetworkObject>() == null) systems.AddComponent<NetworkObject>();
+
+            int changed = 0;
+            changed += Relocate<ShiftDirector>(managerObject, systems);
+            changed += Relocate<PatientIntake>(managerObject, systems);
+            changed += Relocate<ComplicationDirector>(managerObject, systems);
+            return changed;
+        }
+
+        /// <summary>
+        /// Move one component onto the systems object, keeping whatever was set on it in the
+        /// inspector - PatientIntake is carrying the casebook reference, and a plain
+        /// AddComponent would silently drop it.
+        /// </summary>
+        private static int Relocate<T>(GameObject from, GameObject to) where T : Component
+        {
+            var stray = from.GetComponent<T>();
+            var already = to.GetComponent<T>();
+
+            if (stray == null)
+            {
+                if (already != null) return 0;
+
+                to.AddComponent<T>();
+                return 1;
+            }
+
+            if (already == null)
+            {
+                UnityEditorInternal.ComponentUtility.CopyComponent(stray);
+                UnityEditorInternal.ComponentUtility.PasteComponentAsNew(to);
+            }
+
+            Object.DestroyImmediate(stray);
+            Debug.Log($"[Verify] Moved {typeof(T).Name} onto '{WardSystemsName}'. On the " +
+                      "NetworkManager it could never spawn, so it never ran at all.");
+            return 1;
         }
 
         private static int Ensure<T>(GameObject go) where T : Component
