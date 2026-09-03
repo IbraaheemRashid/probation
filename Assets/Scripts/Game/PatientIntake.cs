@@ -26,7 +26,26 @@ namespace Probation.Game
         [Tooltip("Never fill every trolley - leave somewhere to put the next one.")]
         [SerializeField] private int leaveFree = 1;
 
+        [Tooltip("Every species, condition and procedure in the game. Assigned by ProbationSetup.")]
+        [SerializeField] private Casebook casebook;
+
         private float _nextArrival;
+
+        /// <summary>Rolls the night's arrivals. Seeded per night so a bad one can be replayed.</summary>
+        private System.Random _rng = new(1);
+
+        /// <summary>Last case drawn, so an immediate repeat can be rerolled once.</summary>
+        private Condition _lastCondition;
+
+        private bool _warnedNoCasebook;
+
+        private void Awake()
+        {
+            // Every client needs this, not only the host. Patients replicate their species and
+            // condition as indices into the casebook's lists, so a client without one resolves
+            // every patient in the ward to nothing at all.
+            if (casebook != null) Casebook.Active = casebook;
+        }
 
         private void Update()
         {
@@ -35,6 +54,10 @@ namespace Probation.Game
             var director = ShiftDirector.Instance;
             if (director == null || director.Phase != ShiftPhase.Shift)
             {
+                // A missing director is a fault; a non-Shift phase is just the night being over,
+                // so only the first is worth saying out loud.
+                if (director == null) Explain("there is no ShiftDirector in the scene.");
+
                 _nextArrival = Time.time + firstArrivalAfter;
                 _seededForDay = -1;
                 return;
@@ -59,6 +82,13 @@ namespace Probation.Game
             if (_seededForDay == day) return;
 
             _seededForDay = day;
+
+            // One seed per night, so the host rolls a night two groups can argue about by
+            // number. A different prime to ComplicationDirector's, or intake and the emergency
+            // ladder would march in step all night.
+            _rng = new System.Random(day * 6151);
+            _lastCondition = null;
+
             for (int i = 0; i < startingPatients; i++)
                 if (!TryAdmit()) break;
 
@@ -94,6 +124,8 @@ namespace Probation.Game
             if (target == null)
             {
                 WarnNoTrolley();
+                Explain($"no free trolley parked in intake. {Gurney.All.Count} trolleys spawned, " +
+                        $"{IntakeBay.All.Count} intake bays registered.");
                 return false;
             }
 
@@ -105,11 +137,69 @@ namespace Probation.Game
                 break;
             }
 
-            if (waiting == null) return false;
+            if (waiting == null)
+            {
+                Explain($"no patient free to admit. {Patient.All.Count} patients spawned.");
+                return false;
+            }
 
-            waiting.Admit();
+            if (!TryDrawCase(out var drawnSpecies, out var drawnCondition))
+            {
+                Explain($"the casebook drew nothing for night {ShiftDirector.Instance?.Day}.");
+                return false;
+            }
+
+            waiting.Admit(drawnSpecies, drawnCondition);
+
+            // Restart and nothing else. Intake deliberately does not assign a procedure, even
+            // though it is holding the correct one right here - somebody has to read the patient
+            // and write the chart, or there was never a decision to get wrong.
             waiting.GetComponent<Operation>()?.Restart();
+
             target.Load(waiting);
+            return true;
+        }
+
+        /// <summary>
+        /// Roll the next case, rejecting an immediate repeat once.
+        ///
+        /// Without that reroll the three seeded openers land on the same case far more often
+        /// than a player reads as random, and the first thing anybody learns about the ward is
+        /// that it does not vary.
+        /// </summary>
+        private bool TryDrawCase(out Species drawnSpecies, out Condition drawnCondition)
+        {
+            drawnSpecies = null;
+            drawnCondition = null;
+
+            var director = ShiftDirector.Instance;
+            if (director == null) return false;
+
+            var book = Casebook.Active;
+            if (book == null)
+            {
+                // Loud, because the symptom is otherwise indistinguishable from a quiet night:
+                // no patient is ever admitted, nothing errors, and the ward simply stays empty.
+                if (!_warnedNoCasebook)
+                {
+                    _warnedNoCasebook = true;
+                    Debug.LogError("[Intake] No casebook assigned - nobody can be admitted. " +
+                                   "Run Probation > Setup > 7, or Probation > Verify and Repair Scene.", this);
+                }
+
+                return false;
+            }
+
+            if (!book.TryDraw(director.Day, _rng, out drawnSpecies, out drawnCondition)) return false;
+
+            if (drawnCondition == _lastCondition
+                && book.TryDraw(director.Day, _rng, out var second, out var secondCondition))
+            {
+                drawnSpecies = second;
+                drawnCondition = secondCondition;
+            }
+
+            _lastCondition = drawnCondition;
             return true;
         }
 
@@ -127,5 +217,22 @@ namespace Probation.Game
         }
 
         private float _nextWarning;
+
+        /// <summary>
+        /// Say why nobody was admitted, once per distinct reason.
+        ///
+        /// Every one of these paths used to return false without a word, so an empty ward looked
+        /// identical whether intake was working perfectly and simply had nowhere to put anybody,
+        /// or the whole system was dead. An empty ward is the one symptom this game cannot
+        /// afford to be ambiguous about - it is also what a working quiet night looks like.
+        /// </summary>
+        private void Explain(string why)
+        {
+            if (!_explained.Add(why)) return;
+
+            Debug.LogWarning($"[Intake] Nobody admitted: {why}", this);
+        }
+
+        private readonly System.Collections.Generic.HashSet<string> _explained = new();
     }
 }

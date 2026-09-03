@@ -10,11 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 738f9ae39d750e346b79f61db747e1f1, type: 3}
-  m_Name: Species_Thoracid
+  m_Name: Species_Vithrid
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Species
-  displayName: Thoracid
-  restingHeartRate: 68
-  criticalHeartRate: 195
-  bleedOutSeconds: 45
-  wakesToNoise: 1
-  allergicToMetal: 0
+  displayName: Vithrid
+  restingHeartRate: 112
+  criticalHeartRate: 240
+  bleedOutSeconds: 20
+  wakesToNoise: 0
+  allergicToMetal: 1

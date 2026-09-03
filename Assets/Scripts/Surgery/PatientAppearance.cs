@@ -56,7 +56,13 @@ namespace Probation.Surgery
 
             // Harm reads as the colour draining towards something jaundiced. Deliberately not a
             // bar - you notice a patient looking wrong before you could ever read a number.
-            float sickness = Mathf.Clamp01(_patient.Harm);
+            //
+            // Whichever is worse, what they arrived with or what has happened to them since.
+            // Kept as two separate numbers on purpose: harm is the score and somebody is to
+            // blame for it, whereas a patient who walked in looking dreadful has not been hurt
+            // by anyone yet. Folding the presentation into harm would put the ward on the hook
+            // for how ill its patients already were.
+            float sickness = Mathf.Clamp01(Mathf.Max(_patient.Harm, _patient.PresentingSickness));
 
             foreach (var renderer in _renderers)
             {

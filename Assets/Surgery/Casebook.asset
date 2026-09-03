@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c682c4cbdf744da94347aeb6ab41e09, type: 3}
+  m_Name: Casebook
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Casebook
+  species:
+  - {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
+  - {fileID: 11400000, guid: 3e6f6334f98a58c4384fd8479758a875, type: 2}
+  procedures:
+  - {fileID: 11400000, guid: c8265c54fc3a8df4ab856b99e6f94357, type: 2}
+  - {fileID: 11400000, guid: 8adc61a718f4b214bb218de7ac2e9053, type: 2}
+  conditions:
+  - {fileID: 11400000, guid: e3bdfb16fe841354da676c012a65f20f, type: 2}
+  - {fileID: 11400000, guid: eac1764f0534f214d8cd5f4165cf4d63, type: 2}
+  - {fileID: 11400000, guid: 72e5dd455de5729469a48bbbcb46b65d, type: 2}
+  arrivals:
+  - condition: {fileID: 11400000, guid: eac1764f0534f214d8cd5f4165cf4d63, type: 2}
+    species: {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
+    weight: 3
+    fromNight: 1
+    untilNight: 99
+  - condition: {fileID: 11400000, guid: eac1764f0534f214d8cd5f4165cf4d63, type: 2}
+    species: {fileID: 11400000, guid: 3e6f6334f98a58c4384fd8479758a875, type: 2}
+    weight: 3
+    fromNight: 1
+    untilNight: 99
+  - condition: {fileID: 11400000, guid: e3bdfb16fe841354da676c012a65f20f, type: 2}
+    species: {fileID: 11400000, guid: 3e6f6334f98a58c4384fd8479758a875, type: 2}
+    weight: 2
+    fromNight: 2
+    untilNight: 99
+  - condition: {fileID: 11400000, guid: e3bdfb16fe841354da676c012a65f20f, type: 2}
+    species: {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
+    weight: 1.5
+    fromNight: 3
+    untilNight: 99
+  - condition: {fileID: 11400000, guid: 72e5dd455de5729469a48bbbcb46b65d, type: 2}
+    species: {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
+    weight: 1.5
+    fromNight: 4
+    untilNight: 99
+  - condition: {fileID: 11400000, guid: 72e5dd455de5729469a48bbbcb46b65d, type: 2}
+    species: {fileID: 11400000, guid: 3e6f6334f98a58c4384fd8479758a875, type: 2}
+    weight: 1.5
+    fromNight: 4
+    untilNight: 99

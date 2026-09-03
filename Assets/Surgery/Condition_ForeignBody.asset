@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff7187d31e6e41ae9f21d4e7bfc4a069, type: 3}
+  m_Name: Condition_ForeignBody
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Condition
+  id: foreign_body
+  displayName: mass in the upper cavity
+  scannerLines:
+  - dense mass, upper cavity
+  - no movement across repeat scans
+  - surrounding tissue undisturbed
+  restingRateOffset: 14
+  presentingSickness: 0.18
+  arrivesUnconscious: 0
+  arrivesBleedingRate: 0
+  arrivesHarmed: 0.05
+  untreatedHarmPerSecond: 0.003
+  answers:
+  - species: {fileID: 11400000, guid: bceea8826a93b4d4faa207e7e77d67f7, type: 2}
+    treatment: {fileID: 0}
+    reliefIfCorrect: 0.35
+    harmPerWrongStep: 0.06
+    harmIfOperated: 0.45
+    fragilityIfWrong: 0.6
+    reviewLineWrong: cut open a Thoracid to take out its second heart
+    reviewLineRight: left a Thoracid's second heart where it was
+  - species: {fileID: 11400000, guid: 3e6f6334f98a58c4384fd8479758a875, type: 2}
+    treatment: {fileID: 11400000, guid: 8adc61a718f4b214bb218de7ac2e9053, type: 2}
+    reliefIfCorrect: 0.4
+    harmPerWrongStep: 0.06
+    harmIfOperated: 0
+    fragilityIfWrong: 0.6
+    reviewLineWrong: operated on a Vithrid for the wrong thing
+    reviewLineRight: got a mass out of a Vithrid

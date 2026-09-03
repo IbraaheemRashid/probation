@@ -590,9 +590,12 @@ namespace Probation.EditorTools
             }
 
             System.IO.Directory.CreateDirectory(SurgeryAssetDir);
-            var species = BuildSpecies();
+            var thoracid = BuildThoracid();
+            var vithrid = BuildVithrid();
             var triage = BuildTriage();
             var extraction = BuildExtraction();
+            var (foreignBody, laceration, brood) = BuildConditions(thoracid, vithrid, triage, extraction);
+            var casebook = BuildCasebook(thoracid, vithrid, triage, extraction, foreignBody, laceration, brood);
             AssetDatabase.SaveAssets();
 
             var old = GameObject.Find("Ward");
@@ -642,8 +645,18 @@ namespace Probation.EditorTools
             for (int i = 0; i < 6; i++)
                 Trolley(t, i + 1, new Vector3(-6.5f + i * 2.6f, 0.5f, -5f));
 
+            // No species and no procedure here any more. Both are dealt at admission from the
+            // casebook, and a patient carrying an authored procedure would silently outrank
+            // whatever the ward charted.
             for (int i = 0; i < 8; i++)
-                BuildPatient(t, $"Patient {i + 1}", species, i % 2 == 0 ? triage : extraction);
+                BuildPatient(t, $"Patient {i + 1}");
+
+            // Before looking for the intake, because this is what creates it in the right place.
+            var manager = Object.FindFirstObjectByType<NetworkManager>();
+            if (manager != null) BuildWardSystems(manager.gameObject);
+
+            var intake = Object.FindFirstObjectByType<PatientIntake>();
+            if (intake != null) SetRefs(intake, ("casebook", casebook));
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             AssetDatabase.SaveAssets();
@@ -778,7 +791,11 @@ namespace Probation.EditorTools
             go.AddComponent<Steriliser>();
         }
 
-        private static Species BuildSpecies()
+        /// <summary>
+        /// The common one. Slow heart, tolerant of metal, and - the fact the whole diagnostic
+        /// system turns on - it has a second heart sitting in the upper cavity as normal anatomy.
+        /// </summary>
+        private static Species BuildThoracid()
         {
             var species = LoadOrCreate<Species>($"{SurgeryAssetDir}/Species_Thoracid.asset");
             species.displayName = "Thoracid";
@@ -787,9 +804,154 @@ namespace Probation.EditorTools
             species.bleedOutSeconds = 45f;
             species.wakesToNoise = true;          // volume becomes an input
             species.allergicToMetal = false;
-            species.diagnosisText = "foreign body lodged in the upper cavity";
             EditorUtility.SetDirty(species);
             return species;
+        }
+
+        /// <summary>
+        /// The other one, built to invert every human instinct the Thoracid teaches. It rests at
+        /// 112, so a rate that means "this one is dying" on the next bed means nothing here; it
+        /// bleeds out in twenty seconds; and it is the species that finally exercises
+        /// allergicToMetal, a rule Operation has implemented since day one and never once run.
+        /// </summary>
+        private static Species BuildVithrid()
+        {
+            var species = LoadOrCreate<Species>($"{SurgeryAssetDir}/Species_Vithrid.asset");
+            species.displayName = "Vithrid";
+            species.restingHeartRate = 112f;
+            species.criticalHeartRate = 240f;
+            species.bleedOutSeconds = 20f;
+            species.wakesToNoise = false;
+            species.allergicToMetal = true;
+            EditorUtility.SetDirty(species);
+            return species;
+        }
+
+        /// <summary>
+        /// The three conditions the ward opens with.
+        ///
+        /// Foreign body is the thesis: one presentation, two answers, and the answer that kills
+        /// is the confident one. Its scanner lines and the brood's are deliberately near
+        /// identical apart from the word that matters.
+        /// </summary>
+        private static (Condition foreignBody, Condition laceration, Condition brood) BuildConditions(
+            Species thoracid, Species vithrid, Procedure triage, Procedure extraction)
+        {
+            var foreignBody = LoadOrCreate<Condition>($"{SurgeryAssetDir}/Condition_ForeignBody.asset");
+            foreignBody.id = "foreign_body";
+            foreignBody.displayName = "mass in the upper cavity";
+            foreignBody.scannerLines = new[]
+            {
+                "dense mass, upper cavity",
+                "no movement across repeat scans",
+                "surrounding tissue undisturbed",
+            };
+            foreignBody.restingRateOffset = 14f;
+            foreignBody.presentingSickness = 0.18f;
+            foreignBody.arrivesHarmed = 0.05f;
+            foreignBody.untreatedHarmPerSecond = 0.003f;
+            foreignBody.answers = new System.Collections.Generic.List<ConditionAnswer>
+            {
+                // The trap. Nothing about this reads as a trap from across the ward, which is
+                // the entire point - it presents exactly like the one you are meant to cut.
+                //
+                // Not instantly lethal, deliberately. Taking the heart out costs them 0.45 on
+                // top of the per-step harm, and because the condition is never resolved they go
+                // on deteriorating afterwards - so they are dying rather than dead, and a team
+                // who notice can still save them. It becomes the slower, nastier version once
+                // fragility lands and they crash during cover-up instead.
+                new() { species = thoracid, treatment = null, harmIfOperated = 0.45f,
+                        reviewLineWrong = "cut open a Thoracid to take out its second heart",
+                        reviewLineRight = "left a Thoracid's second heart where it was" },
+
+                new() { species = vithrid, treatment = extraction, reliefIfCorrect = 0.4f,
+                        harmPerWrongStep = 0.06f, fragilityIfWrong = 0.6f,
+                        reviewLineWrong = "operated on a Vithrid for the wrong thing",
+                        reviewLineRight = "got a mass out of a Vithrid" },
+            };
+            EditorUtility.SetDirty(foreignBody);
+
+            var laceration = LoadOrCreate<Condition>($"{SurgeryAssetDir}/Condition_Laceration.asset");
+            laceration.id = "laceration";
+            laceration.displayName = "open laceration";
+            laceration.scannerLines = new[]
+            {
+                "pressure falling",
+                "focal source at torso",
+                "no mass detected",
+            };
+            laceration.restingRateOffset = 18f;
+            laceration.presentingSickness = 0.2f;
+            laceration.arrivesBleedingRate = 0.012f;
+            laceration.arrivesHarmed = 0.08f;
+            laceration.untreatedHarmPerSecond = 0.006f;
+            laceration.answers = new System.Collections.Generic.List<ConditionAnswer>
+            {
+                // No species set: the fallback, and the reason night one is survivable. The same
+                // answer on everybody makes this the condition new players learn the ward on.
+                new() { species = null, treatment = triage, reliefIfCorrect = 0.45f,
+                        harmPerWrongStep = 0.05f, fragilityIfWrong = 0.5f,
+                        reviewLineWrong = "ran the wrong procedure on a bleeder",
+                        reviewLineRight = "closed somebody up" },
+            };
+            EditorUtility.SetDirty(laceration);
+
+            var brood = LoadOrCreate<Condition>($"{SurgeryAssetDir}/Condition_Brood.asset");
+            brood.id = "brood";
+            brood.displayName = "brood";
+            brood.scannerLines = new[]
+            {
+                "mass, upper cavity",
+                "movement across repeat scans",
+                "surrounding tissue displaced",
+            };
+            brood.restingRateOffset = 18f;
+            brood.presentingSickness = 0.22f;
+            brood.arrivesHarmed = 0.1f;
+            brood.untreatedHarmPerSecond = 0.005f;
+            brood.answers = new System.Collections.Generic.List<ConditionAnswer>
+            {
+                new() { species = null, treatment = extraction, reliefIfCorrect = 0.35f,
+                        harmPerWrongStep = 0.08f, fragilityIfWrong = 0.7f,
+                        reviewLineWrong = "left a brood inside somebody",
+                        reviewLineRight = "got a brood out intact" },
+            };
+            EditorUtility.SetDirty(brood);
+
+            return (foreignBody, laceration, brood);
+        }
+
+        /// <summary>
+        /// The registry every client resolves patient indices through.
+        ///
+        /// The arrival weights are the difficulty curve, and they are ordered as a teaching
+        /// sequence: night one is nothing but lacerations so the ward can be learned at all,
+        /// extraction arrives on night two, the Thoracid trap on night three once cutting a mass
+        /// out has become the obvious move, and the brood on night four.
+        /// </summary>
+        private static Casebook BuildCasebook(Species thoracid, Species vithrid,
+                                              Procedure triage, Procedure extraction,
+                                              Condition foreignBody, Condition laceration, Condition brood)
+        {
+            var book = LoadOrCreate<Casebook>($"{SurgeryAssetDir}/Casebook.asset");
+
+            // APPEND ONLY. These list positions are the wire format - see Casebook.
+            book.species = new System.Collections.Generic.List<Species> { thoracid, vithrid };
+            book.procedures = new System.Collections.Generic.List<Procedure> { triage, extraction };
+            book.conditions = new System.Collections.Generic.List<Condition> { foreignBody, laceration, brood };
+
+            book.arrivals = new System.Collections.Generic.List<CaseWeight>
+            {
+                new() { condition = laceration,  species = thoracid, weight = 3f,   fromNight = 1 },
+                new() { condition = laceration,  species = vithrid,  weight = 3f,   fromNight = 1 },
+                new() { condition = foreignBody, species = vithrid,  weight = 2f,   fromNight = 2 },
+                new() { condition = foreignBody, species = thoracid, weight = 1.5f, fromNight = 3 },
+                new() { condition = brood,       species = thoracid, weight = 1.5f, fromNight = 4 },
+                new() { condition = brood,       species = vithrid,  weight = 1.5f, fromNight = 4 },
+            };
+
+            EditorUtility.SetDirty(book);
+            return book;
         }
 
         /// <summary>The quick job. Most patients want this - it is the ward's baseline tempo.</summary>
@@ -837,7 +999,7 @@ namespace Probation.EditorTools
             return procedure;
         }
 
-        private static void BuildPatient(Transform parent, string name, Species species, Procedure procedure)
+        private static void BuildPatient(Transform parent, string name)
         {
             var go = Box(name, new Vector3(0f, -40f, 0f), new Vector3(0.55f, 0.35f, 1.7f));
             go.transform.SetParent(parent, true);
@@ -849,11 +1011,8 @@ namespace Probation.EditorTools
 
             go.AddComponent<NetworkObject>();
 
-            var patient = go.AddComponent<Patient>();
-            SetRefs(patient, ("species", species));
-
-            var operation = go.AddComponent<Operation>();
-            SetRefs(operation, ("procedure", procedure));
+            go.AddComponent<Patient>();
+            go.AddComponent<Operation>();
 
             // A patient is haulable, and stays haulable after it dies. A corpse is a physical
             // problem somebody has to move, not a despawn.
@@ -876,6 +1035,32 @@ namespace Probation.EditorTools
             Site(go.transform, "torso", new Vector3(0f, 0.2f, 0f));
             Site(go.transform, "cavity", new Vector3(0f, 0.2f, 0.45f));
 
+            Chart(go.transform);
+        }
+
+        /// <summary>
+        /// The board at the foot of the bed.
+        ///
+        /// Its own GameObject, and that is load-bearing rather than tidy: PlayerInteractor
+        /// resolves focus through GetComponentInParent&lt;IInteractable&gt;, and the patient root is
+        /// already a Grabbable, which is one too. On the root they would fight over the prompt
+        /// and the winner would depend on component order. The collider is a trigger so it stays
+        /// out of the patient's compound collider, where it would corrupt the impact speeds
+        /// Patient.OnCollisionEnter reads - PlayerInteractor casts against triggers anyway.
+        /// </summary>
+        private static void Chart(Transform parent)
+        {
+            var go = new GameObject("Chart");
+            go.transform.SetParent(parent, false);
+
+            // Local space, so these are multiplied by the patient's own scale.
+            go.transform.localPosition = new Vector3(0f, 0.8f, -0.62f);
+
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(1.1f, 1.2f, 0.2f);
+
+            go.AddComponent<PatientChart>();
         }
 
         /// <summary>
@@ -1232,11 +1417,11 @@ namespace Probation.EditorTools
             added += Ensure<UnityTransport>(go);
             added += Ensure<NetworkBootstrap>(go);
             added += Ensure<NetworkDiagnostics>(go);
-            added += Ensure<ShiftDirector>(go);
             added += Ensure<SurgeryHud>(go);
             added += Ensure<ShiftHud>(go);
-            added += Ensure<PatientIntake>(go);
-            added += Ensure<ComplicationDirector>(go);
+
+            added += BuildWardSystems(go);
+            problems += VerifyCasebook();
 
             // Wards built before the intake bay existed have no way to admit anybody, and the
             // symptom is simply that no patients ever appear. Repair it in place rather than
@@ -1329,6 +1514,189 @@ namespace Probation.EditorTools
             Debug.Log($"[Verify] {beds} beds, {patients} patients, {monitors} monitors, {tools} tools. " +
                       $"Added {added} missing component(s), {problems} problem(s) needing a setup step. " +
                       (added > 0 ? "SAVE THE SCENE." : "Nothing to add."));
+        }
+
+        /// <summary>
+        /// The casebook is load-bearing in a way nothing else in the scene is. Patients replicate
+        /// their species and condition as indices into its lists, so a missing or mis-authored
+        /// one produces a ward of patients with no species, no condition and no procedure - and
+        /// not one error anywhere to say so. Everything here exists because the failure is silent.
+        /// </summary>
+        private static int VerifyCasebook()
+        {
+            var intake = Object.FindFirstObjectByType<PatientIntake>();
+            if (intake == null) return 0;
+
+            int problems = 0;
+
+            var serialized = new SerializedObject(intake);
+            var field = serialized.FindProperty("casebook");
+            var book = field.objectReferenceValue as Casebook;
+
+            if (book == null)
+            {
+                book = AssetDatabase.LoadAssetAtPath<Casebook>($"{SurgeryAssetDir}/Casebook.asset");
+                if (book == null)
+                {
+                    Debug.LogError("[Verify] No casebook asset. Run step 7 - without one, every " +
+                                   "patient is admitted with no species and no condition.");
+                    return 1;
+                }
+
+                field.objectReferenceValue = book;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                Debug.Log("[Verify] Reattached the casebook to PatientIntake.");
+            }
+
+            if (book.species.Count == 0 || book.procedures.Count == 0 || book.conditions.Count == 0)
+            {
+                Debug.LogError("[Verify] The casebook has an empty list. Run step 7.");
+                problems++;
+            }
+
+            var ids = new System.Collections.Generic.HashSet<string>();
+            foreach (var condition in book.conditions)
+            {
+                if (condition == null)
+                {
+                    Debug.LogError("[Verify] The casebook has an empty condition slot. Indices are " +
+                                   "the wire format, so a hole here shifts every patient after it.");
+                    problems++;
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(condition.id))
+                {
+                    Debug.LogError($"[Verify] Condition '{condition.name}' has no id.");
+                    problems++;
+                }
+                else if (!ids.Add(condition.id))
+                {
+                    Debug.LogError($"[Verify] Two conditions share the id '{condition.id}'.");
+                    problems++;
+                }
+
+                // A scanner line that contains the condition's own name hands over the answer,
+                // and diagnosis becomes reading one label off one screen.
+                foreach (string line in condition.scannerLines)
+                {
+                    if (string.IsNullOrEmpty(line) || string.IsNullOrWhiteSpace(condition.displayName)) continue;
+                    if (!line.ToLowerInvariant().Contains(condition.displayName.ToLowerInvariant())) continue;
+
+                    Debug.LogWarning($"[Verify] '{condition.name}' has a scanner line naming the " +
+                                     $"condition itself ('{line}'). Signs, never the answer.");
+                    problems++;
+                }
+            }
+
+            foreach (var arrival in book.arrivals)
+            {
+                if (arrival?.condition == null || arrival.species == null) continue;
+                if (arrival.condition.AnswerFor(arrival.species) != null) continue;
+
+                Debug.LogError($"[Verify] '{arrival.condition.name}' has no answer for " +
+                               $"{arrival.species.displayName}, and no fallback. That patient can " +
+                               "be admitted and never correctly treated.");
+                problems++;
+            }
+
+            // A patient with no chart cannot be diagnosed, cannot be operated on, and cannot be
+            // discharged - they simply occupy a bed all night. Repair rather than report: wards
+            // built before the chart existed are otherwise unplayable and give no reason why.
+            foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
+            {
+                if (patient.GetComponentInChildren<PatientChart>(true) != null) continue;
+
+                Chart(patient.transform);
+                Debug.Log($"[Verify] Added the missing chart to {patient.name}.");
+            }
+
+            // Operation.SiteFor returns null on a miss and Evaluate silently does nothing, so a
+            // step aimed at a site nobody has produces a patient who can never be operated on
+            // and never explains why.
+            var sites = new System.Collections.Generic.HashSet<string>();
+            foreach (var site in Object.FindObjectsByType<SurgerySite>(FindObjectsSortMode.None))
+                if (site != null) sites.Add(site.siteId);
+
+            foreach (var procedure in book.procedures)
+            {
+                if (procedure == null) continue;
+
+                foreach (var step in procedure.steps)
+                {
+                    if (sites.Contains(step.targetSite)) continue;
+
+                    Debug.LogError($"[Verify] '{procedure.displayName}' step '{step.displayName}' " +
+                                   $"targets site '{step.targetSite}', which no patient has.");
+                    problems++;
+                }
+            }
+
+            return problems;
+        }
+
+        private const string WardSystemsName = "Ward Systems";
+
+        /// <summary>
+        /// Give the ward's directors something they can actually spawn on.
+        ///
+        /// ShiftDirector, PatientIntake and ComplicationDirector are NetworkBehaviours, and a
+        /// NetworkBehaviour only ever gets IsServer set inside UpdateNetworkProperties, which
+        /// runs from NetworkObject spawn and nowhere else. They were sitting on the
+        /// NetworkManager object, which has no NetworkObject and should never have one - so they
+        /// never spawned, IsServer stayed false for the whole session, and every Update in all
+        /// three returned on its first line.
+        ///
+        /// The symptom was a ward that started, drew a HUD, spawned a player and then simply did
+        /// nothing forever: no patients, no shift clock, no complications, no announcements, and
+        /// not one error anywhere to say why. Their own spawnable object fixes all of it.
+        /// </summary>
+        private static int BuildWardSystems(GameObject managerObject)
+        {
+            var systems = GameObject.Find(WardSystemsName);
+            if (systems == null)
+            {
+                systems = new GameObject(WardSystemsName);
+                Debug.Log($"[Verify] Created '{WardSystemsName}' - the ward's directors had nothing to spawn on.");
+            }
+
+            if (systems.GetComponent<NetworkObject>() == null) systems.AddComponent<NetworkObject>();
+
+            int changed = 0;
+            changed += Relocate<ShiftDirector>(managerObject, systems);
+            changed += Relocate<PatientIntake>(managerObject, systems);
+            changed += Relocate<ComplicationDirector>(managerObject, systems);
+            return changed;
+        }
+
+        /// <summary>
+        /// Move one component onto the systems object, keeping whatever was set on it in the
+        /// inspector - PatientIntake is carrying the casebook reference, and a plain
+        /// AddComponent would silently drop it.
+        /// </summary>
+        private static int Relocate<T>(GameObject from, GameObject to) where T : Component
+        {
+            var stray = from.GetComponent<T>();
+            var already = to.GetComponent<T>();
+
+            if (stray == null)
+            {
+                if (already != null) return 0;
+
+                to.AddComponent<T>();
+                return 1;
+            }
+
+            if (already == null)
+            {
+                UnityEditorInternal.ComponentUtility.CopyComponent(stray);
+                UnityEditorInternal.ComponentUtility.PasteComponentAsNew(to);
+            }
+
+            Object.DestroyImmediate(stray);
+            Debug.Log($"[Verify] Moved {typeof(T).Name} onto '{WardSystemsName}'. On the " +
+                      "NetworkManager it could never spawn, so it never ran at all.");
+            return 1;
         }
 
         private static int Ensure<T>(GameObject go) where T : Component
