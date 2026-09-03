@@ -172,6 +172,10 @@ namespace Probation.EditorTools
             light.shadows = LightShadows.Soft;
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
+            // The ward's sky was set by hand once and would have been silently lost the next time
+            // anybody regenerated this scene - which writes to the same file the ward lives in.
+            ApplyNightSky();
+
             Box("Floor", new Vector3(0f, -0.5f, 0f), new Vector3(30f, 1f, 30f));
 
             // Step-over test. The capsule floats ~0.25 m off the floor, so the first two
@@ -1538,6 +1542,34 @@ namespace Probation.EditorTools
         // ------------------------------------------------------------------ 9
 
         private const string MapScenePath = "Assets/Scenes/Map.unity";
+        private const string StarSkyMaterialPath = "Assets/Shaders/M_StarSky.mat";
+
+        /// <summary>
+        /// Black sky with procedural stars, and an ambient source that does not depend on it.
+        ///
+        /// The second half matters as much as the first, and it is not obvious. Unity's default
+        /// ambient source is the skybox - so the moment the sky goes black, ambient light goes to
+        /// zero and the whole map goes pitch black with it. You would load the scene, see
+        /// nothing, and reasonably conclude the shader was broken. Flat ambient off a dim cold
+        /// colour keeps the lighting exactly where it was and leaves the sky as the only thing
+        /// that actually changed.
+        ///
+        /// Set here rather than by hand on a scene, because a scene rebuild would silently throw
+        /// a hand-edit away and nobody would notice until they looked up.
+        /// </summary>
+        private static void ApplyNightSky()
+        {
+            var sky = AssetDatabase.LoadAssetAtPath<Material>(StarSkyMaterialPath);
+            if (sky == null)
+            {
+                Debug.LogWarning($"[Probation] No {StarSkyMaterialPath} - leaving Unity's default sky.");
+                return;
+            }
+
+            RenderSettings.skybox = sky;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.212f, 0.227f, 0.259f);
+        }
 
         /// <summary>
         /// An empty scene with everything invisible already wired, for building a map by hand.
@@ -1569,6 +1601,8 @@ namespace Probation.EditorTools
             light.intensity = 1.1f;
             light.shadows = LightShadows.Soft;
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+            ApplyNightSky();
 
             // Something to stand on while you work. Replace it with your own floor - it is here
             // so that pressing Play before you have built anything does not drop you into the void.
