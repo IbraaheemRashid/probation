@@ -54,6 +54,10 @@ namespace Probation.Game
             var director = ShiftDirector.Instance;
             if (director == null || director.Phase != ShiftPhase.Shift)
             {
+                // A missing director is a fault; a non-Shift phase is just the night being over,
+                // so only the first is worth saying out loud.
+                if (director == null) Explain("there is no ShiftDirector in the scene.");
+
                 _nextArrival = Time.time + firstArrivalAfter;
                 _seededForDay = -1;
                 return;
@@ -120,6 +124,8 @@ namespace Probation.Game
             if (target == null)
             {
                 WarnNoTrolley();
+                Explain($"no free trolley parked in intake. {Gurney.All.Count} trolleys spawned, " +
+                        $"{IntakeBay.All.Count} intake bays registered.");
                 return false;
             }
 
@@ -131,8 +137,17 @@ namespace Probation.Game
                 break;
             }
 
-            if (waiting == null) return false;
-            if (!TryDrawCase(out var drawnSpecies, out var drawnCondition)) return false;
+            if (waiting == null)
+            {
+                Explain($"no patient free to admit. {Patient.All.Count} patients spawned.");
+                return false;
+            }
+
+            if (!TryDrawCase(out var drawnSpecies, out var drawnCondition))
+            {
+                Explain($"the casebook drew nothing for night {ShiftDirector.Instance?.Day}.");
+                return false;
+            }
 
             waiting.Admit(drawnSpecies, drawnCondition);
 
@@ -202,5 +217,22 @@ namespace Probation.Game
         }
 
         private float _nextWarning;
+
+        /// <summary>
+        /// Say why nobody was admitted, once per distinct reason.
+        ///
+        /// Every one of these paths used to return false without a word, so an empty ward looked
+        /// identical whether intake was working perfectly and simply had nowhere to put anybody,
+        /// or the whole system was dead. An empty ward is the one symptom this game cannot
+        /// afford to be ambiguous about - it is also what a working quiet night looks like.
+        /// </summary>
+        private void Explain(string why)
+        {
+            if (!_explained.Add(why)) return;
+
+            Debug.LogWarning($"[Intake] Nobody admitted: {why}", this);
+        }
+
+        private readonly System.Collections.Generic.HashSet<string> _explained = new();
     }
 }
