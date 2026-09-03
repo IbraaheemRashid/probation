@@ -219,6 +219,10 @@ namespace Probation.EditorTools
             var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
+                // First, before anything is added. See StripMissingScripts - an orphaned
+                // component silently throws away every other edit made in this block.
+                StripMissingScripts(contents);
+
                 if (contents.GetComponent<NetworkObject>() == null)
                     contents.AddComponent<NetworkObject>();
 
@@ -336,6 +340,34 @@ namespace Probation.EditorTools
         }
 
         /// <summary>
+        /// Remove components whose script no longer exists, anywhere in the prefab.
+        ///
+        /// These are not merely untidy. Unity will not reliably serialise modifications to a
+        /// prefab that is carrying one, so every AddComponent performed alongside it is quietly
+        /// thrown away and the menu item reports success having changed absolutely nothing on
+        /// disk. The symptom is the worst kind of loop: PlayerNetworkSetup re-adds PlayerBrace
+        /// and PlayerHands at runtime every session and tells you to run step 4 to make it
+        /// stick, running step 4 appears to work, and nothing is different next time.
+        ///
+        /// Deleting a component whose script is gone is always safe - there is no script left to
+        /// read whatever was serialised on it.
+        /// </summary>
+        private static int StripMissingScripts(GameObject contents)
+        {
+            int removed = 0;
+
+            foreach (var transform in contents.GetComponentsInChildren<Transform>(true))
+                removed += GameObjectUtility.RemoveMonoBehavioursWithMissingScript(transform.gameObject);
+
+            if (removed > 0)
+                Debug.Log($"[Probation] Removed {removed} component(s) from the Player prefab whose " +
+                          "script no longer exists. Those were stopping every other change to this " +
+                          "prefab from being saved.");
+
+            return removed;
+        }
+
+        /// <summary>
         /// Add and wire <see cref="PlayerBrace"/> on an already-loaded prefab root.
         ///
         /// Shared so that a scene which needs bracing can guarantee it rather than assuming
@@ -414,6 +446,8 @@ namespace Probation.EditorTools
             var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
+                StripMissingScripts(contents);
+
                 var (brace, hands) = WireVerbs(contents);
 
                 // Without these the gates in PlayerNetworkSetup never fire and remote players keep
