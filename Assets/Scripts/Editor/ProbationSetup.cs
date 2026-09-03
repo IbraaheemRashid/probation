@@ -208,7 +208,35 @@ namespace Probation.EditorTools
 
             System.IO.Directory.CreateDirectory("Assets/Scenes");
             EditorSceneManager.SaveScene(scene, GreyboxScenePath);
+            StampSceneNetworkIds(GreyboxScenePath);
+
             Debug.Log($"[Probation] Greybox scene written to {GreyboxScenePath}. Press Play.");
+        }
+
+        /// <summary>
+        /// Reopen a freshly written scene and save it again, so its NetworkObjects get real ids.
+        ///
+        /// A NetworkObject computes GlobalObjectIdHash in OnValidate, from the GlobalObjectId of
+        /// the object it is on. An object created by script into a scene that has never been
+        /// saved has no stable GlobalObjectId yet, so OnValidate writes <b>zero</b> - and Netcode
+        /// silently refuses to spawn any in-scene NetworkObject whose hash is zero. Reopening
+        /// assigns real ids and re-runs OnValidate; saving again persists what it computed.
+        ///
+        /// The failure this prevents is genuinely awful to diagnose. Nothing in the scene spawns,
+        /// there is no error naming the cause, and the first symptom is somewhere else entirely:
+        /// picking up a scalpel throws "The NetworkBehaviour must be spawned before calling this
+        /// method" from a release RPC, because the grab is never confirmed, grabTimeout fires,
+        /// and PlayerCarry drops a tool it never actually got.
+        ///
+        /// Only scenes built from NewScene need this. Step 7 edits a scene that is already on
+        /// disk, so anything it adds gets a stable id immediately - which is exactly why the ward
+        /// has always worked and the testbed, rebuilt from nothing, did not.
+        /// </summary>
+        private static void StampSceneNetworkIds(string path)
+        {
+            Scene reopened = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+            EditorSceneManager.MarkSceneDirty(reopened);
+            EditorSceneManager.SaveScene(reopened, path);
         }
 
         // ------------------------------------------------------------------ 4
@@ -1305,6 +1333,7 @@ namespace Probation.EditorTools
 
             System.IO.Directory.CreateDirectory("Assets/Scenes");
             EditorSceneManager.SaveScene(scene, TestbedScenePath);
+            StampSceneNetworkIds(TestbedScenePath);
 
             // Make it part of the project, not just a file on disk: listed in Build Settings,
             // loadable by name, and present in a player build so the two-machine test can use it.
