@@ -56,6 +56,10 @@ namespace Probation.Player
         {
             brace = Ensure(brace);
             hands = Ensure(hands);
+
+            // Without this the Player prefab has no renderer at all and interns are invisible to
+            // each other, which hides the entire co-op design rather than just looking unfinished.
+            Ensure<PlayerBody>(null);
         }
 
         private T Ensure<T>(T existing) where T : MonoBehaviour

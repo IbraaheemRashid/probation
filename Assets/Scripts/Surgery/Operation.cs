@@ -23,6 +23,12 @@ namespace Probation.Surgery
         [Tooltip("Seconds before a wrong tool at the site can hurt the patient again.")]
         [SerializeField] private float wrongToolCooldown = 1.25f;
 
+        [Header("What leaves them fragile")]
+        [Tooltip("Added each time a step is completed on somebody who is still awake.")]
+        [SerializeField] private float fragilityPerAwakeStep = 0.12f;
+        [Tooltip("Fraction of whatever harm is left at the end that becomes fragility.")]
+        [SerializeField] private float fragilityFromResidualHarm = 0.5f;
+
         private readonly NetworkVariable<int> _stepIndex = new();
         private readonly NetworkVariable<float> _progress = new();
         private readonly NetworkVariable<bool> _finished = new();
@@ -188,7 +194,15 @@ namespace Probation.Surgery
             {
                 _nextHarmAllowedAt = Time.time + wrongToolCooldown;
                 foreach (ulong holder in _holders)
+                {
                     _patient.ApplyHarm(0.1f, holder, "operated on a patient who was still awake");
+
+                    // Cutting somebody who can feel it does lasting damage as well as immediate
+                    // damage. They come off the table looking no worse and holding together
+                    // rather less well.
+                    _patient.AddFragility(fragilityPerAwakeStep, holder, null);
+                }
+
                 ShiftDirector.Instance?.Announce("IT IS AWAKE.");
             }
 
@@ -264,6 +278,10 @@ namespace Probation.Surgery
 
             var answer = _patient.Condition?.AnswerFor(_patient.Species);
 
+            // Whatever harm you failed to get back off them before closing follows them out of
+            // theatre as fragility. Blamed on nobody: it is the state they were in, not an act.
+            _patient.AddFragility(_patient.Harm * fragilityFromResidualHarm, ulong.MaxValue, null);
+
             if (IsCorrect)
             {
                 _patient.ResolveCondition();
@@ -289,6 +307,8 @@ namespace Probation.Surgery
             // surgeon did exactly as they were told, and blaming them would poison the one
             // screen this whole game exists to produce.
             if (answer == null) return;
+
+            _patient.AddFragility(answer.fragilityIfWrong, CharterOrHolder(), null);
 
             if (answer.harmIfOperated > 0f)
                 _patient.ApplyHarm(answer.harmIfOperated, CharterOrHolder(), answer.reviewLineWrong);

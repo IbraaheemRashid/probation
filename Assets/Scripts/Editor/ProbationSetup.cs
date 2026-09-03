@@ -106,7 +106,11 @@ namespace Probation.EditorTools
 
             var hand = new GameObject("HandAnchor") { layer = playerLayer };
             hand.transform.SetParent(pivot.transform, false);
-            hand.transform.localPosition = new Vector3(0.25f, -0.20f, 0.45f);
+
+            // Held low and near the centre line, so a carried tool sits between both hands rather
+            // than out past the outside of the right one. Far enough below the crosshair
+            // (27 degrees) that it never covers what you are aiming at.
+            hand.transform.localPosition = new Vector3(0.08f, -0.22f, 0.44f);
 
             var cursorLock = root.AddComponent<CursorLock>();
             var reader = root.AddComponent<PlayerInputReader>();
@@ -219,6 +223,10 @@ namespace Probation.EditorTools
             var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
+                // First, before anything is added. See StripMissingScripts - an orphaned
+                // component silently throws away every other edit made in this block.
+                StripMissingScripts(contents);
+
                 if (contents.GetComponent<NetworkObject>() == null)
                     contents.AddComponent<NetworkObject>();
 
@@ -336,6 +344,34 @@ namespace Probation.EditorTools
         }
 
         /// <summary>
+        /// Remove components whose script no longer exists, anywhere in the prefab.
+        ///
+        /// These are not merely untidy. Unity will not reliably serialise modifications to a
+        /// prefab that is carrying one, so every AddComponent performed alongside it is quietly
+        /// thrown away and the menu item reports success having changed absolutely nothing on
+        /// disk. The symptom is the worst kind of loop: PlayerNetworkSetup re-adds PlayerBrace
+        /// and PlayerHands at runtime every session and tells you to run step 4 to make it
+        /// stick, running step 4 appears to work, and nothing is different next time.
+        ///
+        /// Deleting a component whose script is gone is always safe - there is no script left to
+        /// read whatever was serialised on it.
+        /// </summary>
+        private static int StripMissingScripts(GameObject contents)
+        {
+            int removed = 0;
+
+            foreach (var transform in contents.GetComponentsInChildren<Transform>(true))
+                removed += GameObjectUtility.RemoveMonoBehavioursWithMissingScript(transform.gameObject);
+
+            if (removed > 0)
+                Debug.Log($"[Probation] Removed {removed} component(s) from the Player prefab whose " +
+                          "script no longer exists. Those were stopping every other change to this " +
+                          "prefab from being saved.");
+
+            return removed;
+        }
+
+        /// <summary>
         /// Add and wire <see cref="PlayerBrace"/> on an already-loaded prefab root.
         ///
         /// Shared so that a scene which needs bracing can guarantee it rather than assuming
@@ -364,6 +400,14 @@ namespace Probation.EditorTools
                 ("input", contents.GetComponent<PlayerInputReader>()),
                 ("interactor", contents.GetComponent<PlayerInteractor>()),
                 ("carry", contents.GetComponent<PlayerCarry>()));
+
+            // The prefab has never had a renderer on it, so interns have always been invisible to
+            // one another. PlayerBody builds its own primitives, so authoring it is just this.
+            if (contents.GetComponent<PlayerBody>() == null)
+            {
+                contents.AddComponent<PlayerBody>();
+                Debug.Log("[Probation] Added missing PlayerBody to the Player prefab.");
+            }
 
             return (brace, hands);
         }
@@ -414,6 +458,8 @@ namespace Probation.EditorTools
             var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
+                StripMissingScripts(contents);
+
                 var (brace, hands) = WireVerbs(contents);
 
                 // Without these the gates in PlayerNetworkSetup never fire and remote players keep

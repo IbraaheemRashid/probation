@@ -38,6 +38,7 @@ namespace Probation.Surgery
         // cannot carry a ScriptableObject - see Casebook for what that costs us.
         private readonly NetworkVariable<int> _speciesIndex = new(-1);
         private readonly NetworkVariable<int> _conditionIndex = new(-1);
+        private readonly NetworkVariable<float> _fragility = new();
 
         public PatientState State => _state.Value;
         public float Harm => _harm.Value;
@@ -60,6 +61,37 @@ namespace Probation.Surgery
         /// arrived looking dreadful has not been hurt by anyone yet.
         /// </summary>
         public float PresentingSickness => Condition != null ? Condition.presentingSickness : 0f;
+
+        /// <summary>
+        /// How badly this goes if anything else happens to them.
+        ///
+        /// Deliberately a second number and not more harm. Harm is the death clock and it shows -
+        /// a patient carrying a lot of it is visibly and audibly dying. Fragility is the exact
+        /// opposite: they look fine. Folding the two together would destroy the only thing that
+        /// makes a botched operation frightening, which is that nothing appears to be wrong with
+        /// the patient you just closed up.
+        ///
+        /// Added in lumps at the moment something goes wrong, never ticked per frame. _harm
+        /// already writes every frame during a bleed, and a second continuously-churning
+        /// NetworkVariable across eight patients doubles that traffic for nothing.
+        /// </summary>
+        public float Fragility => _fragility.Value;
+
+        /// <summary>
+        /// Make them harder to keep alive, without making them look any worse.
+        ///
+        /// Pass a reason only when somebody is genuinely to blame - it goes straight onto the
+        /// review, and fragility from residual harm belongs to nobody in particular.
+        /// </summary>
+        public void AddFragility(float amount, ulong byClientId, string reason)
+        {
+            if (!IsServer || IsDead || amount <= 0f) return;
+
+            _fragility.Value = Mathf.Clamp01(_fragility.Value + amount);
+
+            if (reason != null && byClientId != ulong.MaxValue)
+                IncidentLog.Record(byClientId, reason);
+        }
 
         /// <summary>
         /// True pain and consciousness state. Readable only through the scanner, which is one
@@ -98,6 +130,9 @@ namespace Probation.Surgery
         [SerializeField] private float safeImpactSpeed = 3.5f;
         [Tooltip("Harm per m/s of impact over the safe speed.")]
         [SerializeField] private float harmPerImpactSpeed = 0.04f;
+        [Tooltip("How much of the safe speed a completely fragile patient loses. At 0.6 they take harm from a bump a healthy one would shrug off.")]
+        [Range(0f, 0.95f)]
+        [SerializeField] private float fragilityImpactPenalty = 0.6f;
 
         /// <summary>
         /// The single thing that makes hauling a patient a skill rather than a walk.
@@ -111,12 +146,19 @@ namespace Probation.Surgery
             if (!IsServer || IsDead || HasLeft) return;
 
             float speed = collision.relativeVelocity.magnitude;
-            if (speed <= safeImpactSpeed) return;
+
+            // A fragile patient dies at a speed nobody would think twice about. The rule has not
+            // changed - it is the threshold that moved - which makes the trolley run out to
+            // discharge the most dangerous part of the night for somebody you only half fixed,
+            // and it costs no new mechanic to say so.
+            float safeSpeed = safeImpactSpeed * (1f - _fragility.Value * fragilityImpactPenalty);
+            if (speed <= safeSpeed) return;
 
             var grabbable = GetComponent<Interaction.Grabbable>();
             ulong blame = grabbable != null ? grabbable.LastHandledBy : ulong.MaxValue;
 
-            ApplyHarmInternal((speed - safeImpactSpeed) * harmPerImpactSpeed, blame,
+            ApplyHarmInternal((speed - safeSpeed) * harmPerImpactSpeed * (1f + _fragility.Value * 2f),
+                              blame,
                               blame == ulong.MaxValue ? null : "slammed a patient into something");
 
             if (speed > safeImpactSpeed * 2f)
@@ -248,6 +290,7 @@ namespace Probation.Surgery
             _conscious.Value = condition == null || !condition.arrivesUnconscious;
 
             ConditionResolved = false;
+            _fragility.Value = 0f;
 
             // Or the new arrival inherits the last occupant's diagnosis, which is the worst
             // possible version of this bug: the chart reads plausibly and is about someone else.
