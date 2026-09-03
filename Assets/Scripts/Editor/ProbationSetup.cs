@@ -172,6 +172,10 @@ namespace Probation.EditorTools
             light.shadows = LightShadows.Soft;
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
+            // The ward's sky was set by hand once and would have been silently lost the next time
+            // anybody regenerated this scene - which writes to the same file the ward lives in.
+            ApplyNightSky();
+
             Box("Floor", new Vector3(0f, -0.5f, 0f), new Vector3(30f, 1f, 30f));
 
             // Step-over test. The capsule floats ~0.25 m off the floor, so the first two
@@ -1535,6 +1539,137 @@ namespace Probation.EditorTools
         /// steps ago is quietly missing components added since - which presents as "the UI does
         /// not show up" rather than as an error.
         /// </summary>
+        // ------------------------------------------------------------------ 9
+
+        private const string MapScenePath = "Assets/Scenes/Map.unity";
+        private const string StarSkyMaterialPath = "Assets/Shaders/M_StarSky.mat";
+
+        /// <summary>
+        /// Black sky with procedural stars, and an ambient source that does not depend on it.
+        ///
+        /// The second half matters as much as the first, and it is not obvious. Unity's default
+        /// ambient source is the skybox - so the moment the sky goes black, ambient light goes to
+        /// zero and the whole map goes pitch black with it. You would load the scene, see
+        /// nothing, and reasonably conclude the shader was broken. Flat ambient off a dim cold
+        /// colour keeps the lighting exactly where it was and leaves the sky as the only thing
+        /// that actually changed.
+        ///
+        /// Set here rather than by hand on a scene, because a scene rebuild would silently throw
+        /// a hand-edit away and nobody would notice until they looked up.
+        /// </summary>
+        private static void ApplyNightSky()
+        {
+            var sky = AssetDatabase.LoadAssetAtPath<Material>(StarSkyMaterialPath);
+            if (sky == null)
+            {
+                Debug.LogWarning($"[Probation] No {StarSkyMaterialPath} - leaving Unity's default sky.");
+                return;
+            }
+
+            RenderSettings.skybox = sky;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.212f, 0.227f, 0.259f);
+        }
+
+        /// <summary>
+        /// An empty scene with everything invisible already wired, for building a map by hand.
+        ///
+        /// Deliberately contains no ward: no bays, no zones, no trolleys, no bench, no patients.
+        /// Every one of those is a decision about a floor plan, and the whole point of this step
+        /// is to stop the generator making those decisions for you.
+        ///
+        /// What it does contain is the part that is miserable to assemble by hand and silent when
+        /// it is wrong - the network stack, the directors on something that can actually spawn,
+        /// the casebook reference, a camera and a light.
+        /// </summary>
+        [MenuItem("Probation/Setup/9 - New Map Scene", priority = 8)]
+        public static void CreateMapScene()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (prefab == null) { Debug.LogError("No Player prefab. Run steps 2 and 4 first."); return; }
+
+            // NewScene does not prompt on its own, and this would silently bin unsaved work.
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            EnsureLobbyCamera();
+
+            var lightGo = new GameObject("Directional Light");
+            var light = lightGo.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.intensity = 1.1f;
+            light.shadows = LightShadows.Soft;
+            lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+            ApplyNightSky();
+
+            // Something to stand on while you work. Replace it with your own floor - it is here
+            // so that pressing Play before you have built anything does not drop you into the void.
+            Box("Placeholder floor", new Vector3(0f, -0.5f, 0f), new Vector3(40f, 1f, 40f));
+
+            // --- network -----------------------------------------------------
+            var managerGo = new GameObject("NetworkManager");
+            var manager = managerGo.AddComponent<NetworkManager>();
+            var transport = managerGo.AddComponent<UnityTransport>();
+
+            var bootstrap = managerGo.AddComponent<NetworkBootstrap>();
+            var bootSo = new SerializedObject(bootstrap);
+
+            // On, because you are going to press Play a hundred times while moving walls around
+            // and clicking Host each time is friction between you and the thing you are judging.
+            // Turn it off when you want the Steam lobby panel instead.
+            bootSo.FindProperty("autoHost").boolValue = true;
+            bootSo.ApplyModifiedPropertiesWithoutUndo();
+
+            managerGo.AddComponent<NetworkDiagnostics>();
+            managerGo.AddComponent<SteamManager>();
+            managerGo.AddComponent<SteamLobbyBootstrap>();
+            managerGo.AddComponent<FacepunchTransport>();
+
+            // Both HUDs are plain MonoBehaviours and read statics, so they are fine here. The
+            // three DIRECTORS are not - see BuildWardSystems.
+            managerGo.AddComponent<SurgeryHud>();
+            managerGo.AddComponent<ShiftHud>();
+
+            var managerSo = new SerializedObject(manager);
+            AssignReference(managerSo, "NetworkConfig.NetworkTransport", transport);
+            AssignReference(managerSo, "NetworkConfig.PlayerPrefab", prefab);
+            managerSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // ShiftDirector, PatientIntake and ComplicationDirector are NetworkBehaviours, and a
+            // NetworkBehaviour only has IsServer set from NetworkObject spawn. On the
+            // NetworkManager - which has no NetworkObject and must not have one - they never
+            // spawn, IsServer stays false all session, and every Update returns on its first
+            // line. No patients, no clock, no announcements, and no error saying why.
+            BuildWardSystems(managerGo);
+            VerifyCasebook();
+
+            // No Player instance in the scene on purpose. NetworkManager spawns one from the
+            // prefab on host start; a scene-placed copy is a second, unowned body standing in
+            // your map doing nothing.
+
+            System.IO.Directory.CreateDirectory("Assets/Scenes");
+            EditorSceneManager.SaveScene(scene, MapScenePath);
+
+            // Without this every NetworkObject in the new scene keeps GlobalObjectIdHash 0 and
+            // Netcode silently refuses to spawn any of them.
+            StampSceneNetworkIds(MapScenePath);
+            AddSceneToBuild(MapScenePath);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"[Probation] Empty map scene written to {MapScenePath}. Press Play and you " +
+                      "can walk around immediately.\n" +
+                      "Build your floor plan, then add the gameplay volumes it needs:\n" +
+                      "  - IntakeBay        one trigger volume. Patients only ever arrive on a trolley parked inside it.\n" +
+                      "  - OperatingBay     one trigger volume per theatre. Procedures only progress inside one.\n" +
+                      "  - WardZone         two trigger volumes, kind Discharge and kind Morgue. This is how patients leave.\n" +
+                      "  - Gurney           one per trolley, with a child transform assigned as its Surface.\n" +
+                      "  - Steriliser       a trigger volume that cleans dirty instruments.\n" +
+                      "Then run Probation > Setup > 6 for the instruments and " +
+                      "Probation > Verify and Repair Scene, which will tell you what is still missing.");
+        }
+
         [MenuItem("Probation/Verify and Repair Scene", priority = 20)]
         public static void VerifyScene()
         {
