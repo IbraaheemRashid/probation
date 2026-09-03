@@ -10,30 +10,54 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b60b7d5c9f929be49ac48dd2af0c4e51, type: 3}
-  m_Name: Procedure_Triage
+  m_Name: Procedure_BroodExtraction
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Procedure
-  displayName: triage
-  description: Already open. Clean it, close it, get them out.
+  displayName: brood extraction
+  description: It is alive, and it does not want to come out. Two of you, at least.
   steps:
-  - displayName: Sedate
+  - displayName: Sedate deeply
     requiredToolId: gas rig
     targetSite: torso
     handsRequired: 1
     tolerance: 0.45
-    holdSeconds: 1.5
+    holdSeconds: 2.5
     wrongToolHarm: 0.05
     opensBleed: 0
     bleedRatePerSecond: 0.02
     closesBleed: 0
     sedates: 1
     requiresUnconscious: 0
-  - displayName: Clean the wound
-    requiredToolId: swab
+  - displayName: Open the seam
+    requiredToolId: scalpel
     targetSite: torso
     handsRequired: 1
     tolerance: 0.4
+    holdSeconds: 3
+    wrongToolHarm: 0.15
+    opensBleed: 1
+    bleedRatePerSecond: 0.03
+    closesBleed: 0
+    sedates: 0
+    requiresUnconscious: 1
+  - displayName: Hold it open
+    requiredToolId: retractor
+    targetSite: torso
+    handsRequired: 2
+    tolerance: 0.5
     holdSeconds: 2
-    wrongToolHarm: 0.08
+    wrongToolHarm: 0.1
+    opensBleed: 0
+    bleedRatePerSecond: 0.02
+    closesBleed: 0
+    sedates: 0
+    requiresUnconscious: 1
+  - displayName: Get it out
+    requiredToolId: forceps
+    targetSite: cavity
+    handsRequired: 2
+    tolerance: 0.4
+    holdSeconds: 3
+    wrongToolHarm: 0.2
     opensBleed: 0
     bleedRatePerSecond: 0.02
     closesBleed: 0
@@ -44,7 +68,7 @@ MonoBehaviour:
     targetSite: torso
     handsRequired: 1
     tolerance: 0.4
-    holdSeconds: 2.5
+    holdSeconds: 3
     wrongToolHarm: 0.12
     opensBleed: 0
     bleedRatePerSecond: 0.02

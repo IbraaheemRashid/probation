@@ -13,39 +13,63 @@ MonoBehaviour:
   m_Name: Procedure_Extraction
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Procedure
   displayName: extraction
-  description: Get the thing out. You cannot do it alone.
+  description: Open them, get the thing out, close them. You cannot do it alone.
   steps:
   - displayName: Sedate
     requiredToolId: gas rig
     targetSite: torso
     handsRequired: 1
     tolerance: 0.45
-    holdSeconds: 1.6
+    holdSeconds: 1.5
     wrongToolHarm: 0.05
     opensBleed: 0
     bleedRatePerSecond: 0.02
     closesBleed: 0
     sedates: 1
     requiresUnconscious: 0
-  - displayName: Hold the seam open
+  - displayName: Open the seam
+    requiredToolId: scalpel
+    targetSite: torso
+    handsRequired: 1
+    tolerance: 0.4
+    holdSeconds: 3
+    wrongToolHarm: 0.15
+    opensBleed: 1
+    bleedRatePerSecond: 0.02
+    closesBleed: 0
+    sedates: 0
+    requiresUnconscious: 1
+  - displayName: Hold it open
     requiredToolId: retractor
     targetSite: torso
     handsRequired: 2
     tolerance: 0.5
     holdSeconds: 2
     wrongToolHarm: 0.1
-    opensBleed: 1
+    opensBleed: 0
     bleedRatePerSecond: 0.02
     closesBleed: 0
     sedates: 0
     requiresUnconscious: 1
-  - displayName: Extract and close
+  - displayName: Take it out
     requiredToolId: forceps
     targetSite: cavity
     handsRequired: 1
     tolerance: 0.4
-    holdSeconds: 2.4
+    holdSeconds: 2.5
     wrongToolHarm: 0.18
+    opensBleed: 0
+    bleedRatePerSecond: 0.02
+    closesBleed: 0
+    sedates: 0
+    requiresUnconscious: 1
+  - displayName: Close them up
+    requiredToolId: suture kit
+    targetSite: torso
+    handsRequired: 1
+    tolerance: 0.4
+    holdSeconds: 3
+    wrongToolHarm: 0.12
     opensBleed: 0
     bleedRatePerSecond: 0.02
     closesBleed: 1

@@ -592,6 +592,14 @@ namespace Probation.EditorTools
             Tool("Suture kit", new Vector3(1.7f, 1.0f, -4.5f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
             Tool("Gas rig",    new Vector3(2.4f, 1.0f, -4.5f), new Vector3(0.16f, 0.10f, 0.16f), 2.0f, 0.15f);
 
+            // The scalpel used to be authored as the wrong answer - no procedure asked for one.
+            // Two procedures open a patient now, so a single blade across four theatres would be
+            // a bottleneck nobody chose. Swabs are new: they give triage its own shape, so the
+            // job you run on somebody who is already open is not just a shorter extraction.
+            Tool("Scalpel",    new Vector3(3.1f, 1.0f, -4.5f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+            Tool("Swab",       new Vector3(3.8f, 1.0f, -4.5f), new Vector3(0.06f, 0.04f, 0.14f), 0.15f, 0.04f);
+            Tool("Swab",       new Vector3(4.4f, 1.0f, -4.5f), new Vector3(0.06f, 0.04f, 0.14f), 0.15f, 0.04f);
+
             // One scanner. Whoever is holding it knows what is wrong and cannot operate.
             Tool("Scanner",    new Vector3(-2.9f, 1.0f, -4.5f), new Vector3(0.10f, 0.04f, 0.20f), 0.5f, 0.06f);
 
@@ -668,8 +676,11 @@ namespace Probation.EditorTools
             var vithrid = BuildVithrid();
             var triage = BuildTriage();
             var extraction = BuildExtraction();
-            var (foreignBody, laceration, brood) = BuildConditions(thoracid, vithrid, triage, extraction);
-            var casebook = BuildCasebook(thoracid, vithrid, triage, extraction, foreignBody, laceration, brood);
+            var broodExtraction = BuildBroodExtraction();
+            var (foreignBody, laceration, brood) =
+                BuildConditions(thoracid, vithrid, triage, extraction, broodExtraction);
+            var casebook = BuildCasebook(thoracid, vithrid, triage, extraction, broodExtraction,
+                                         foreignBody, laceration, brood);
             AssetDatabase.SaveAssets();
 
             var old = GameObject.Find("Ward");
@@ -909,7 +920,8 @@ namespace Probation.EditorTools
         /// identical apart from the word that matters.
         /// </summary>
         private static (Condition foreignBody, Condition laceration, Condition brood) BuildConditions(
-            Species thoracid, Species vithrid, Procedure triage, Procedure extraction)
+            Species thoracid, Species vithrid, Procedure triage, Procedure extraction,
+            Procedure broodExtraction)
         {
             var foreignBody = LoadOrCreate<Condition>($"{SurgeryAssetDir}/Condition_ForeignBody.asset");
             foreignBody.id = "foreign_body";
@@ -985,7 +997,7 @@ namespace Probation.EditorTools
             brood.untreatedHarmPerSecond = 0.005f;
             brood.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
-                new() { species = null, treatment = extraction, reliefIfCorrect = 0.35f,
+                new() { species = null, treatment = broodExtraction, reliefIfCorrect = 0.35f,
                         harmPerWrongStep = 0.08f, fragilityIfWrong = 0.7f,
                         reviewLineWrong = "left a brood inside somebody",
                         reviewLineRight = "got a brood out intact" },
@@ -1005,13 +1017,14 @@ namespace Probation.EditorTools
         /// </summary>
         private static Casebook BuildCasebook(Species thoracid, Species vithrid,
                                               Procedure triage, Procedure extraction,
+                                              Procedure broodExtraction,
                                               Condition foreignBody, Condition laceration, Condition brood)
         {
             var book = LoadOrCreate<Casebook>($"{SurgeryAssetDir}/Casebook.asset");
 
             // APPEND ONLY. These list positions are the wire format - see Casebook.
             book.species = new System.Collections.Generic.List<Species> { thoracid, vithrid };
-            book.procedures = new System.Collections.Generic.List<Procedure> { triage, extraction };
+            book.procedures = new System.Collections.Generic.List<Procedure> { triage, extraction, broodExtraction };
             book.conditions = new System.Collections.Generic.List<Condition> { foreignBody, laceration, brood };
 
             book.arrivals = new System.Collections.Generic.List<CaseWeight>
@@ -1028,19 +1041,34 @@ namespace Probation.EditorTools
             return book;
         }
 
-        /// <summary>The quick job. Most patients want this - it is the ward's baseline tempo.</summary>
+        // The three procedures are deliberately three DIFFERENT SHAPES, not one shape with the
+        // contents swapped. That is what makes the diagnosis pay for itself: reading the patient
+        // wrong does not change a label on the HUD, it changes what your hands do for the next
+        // twenty seconds and how many people it takes.
+        //
+        // Every step here is still a hold. That is the cheap experiment: prove the shapes and the
+        // lengths are right before building incise, remove and suture as real verbs. If a night
+        // of these does not feel like a game, no amount of mechanic underneath them will help.
+
+        /// <summary>
+        /// Already open when they arrive - so no incision at all, and that absence is the lesson.
+        /// Not every patient gets cut, and the shortest job on the ward is the one you run most.
+        /// </summary>
         private static Procedure BuildTriage()
         {
             var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Triage.asset");
             procedure.displayName = "triage";
-            procedure.description = "Put them under, close them up, get them out.";
+            procedure.description = "Already open. Clean it, close it, get them out.";
             procedure.steps = new System.Collections.Generic.List<ProcedureStep>
             {
                 new() { displayName = "Sedate", requiredToolId = "gas rig", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 1.6f, tolerance = 0.45f,
+                        handsRequired = 1, holdSeconds = 1.5f, tolerance = 0.45f,
                         requiresUnconscious = false, wrongToolHarm = 0.05f, sedates = true },
+                new() { displayName = "Clean the wound", requiredToolId = "swab", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 2f, tolerance = 0.4f,
+                        wrongToolHarm = 0.08f },
                 new() { displayName = "Close them up", requiredToolId = "suture kit", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 2.4f, tolerance = 0.4f,
+                        handsRequired = 1, holdSeconds = 2.5f, tolerance = 0.4f,
                         wrongToolHarm = 0.12f, closesBleed = true },
             };
             EditorUtility.SetDirty(procedure);
@@ -1048,26 +1076,67 @@ namespace Probation.EditorTools
         }
 
         /// <summary>
-        /// The one that needs somebody else. handsRequired is what makes co-op structural
-        /// rather than decorative, and the scene ships two retractors because two hands means
-        /// two owner-authoritative objects, never one object with two owners.
+        /// Open, hold open, take it out, close. The full shape, and the one that needs somebody
+        /// else - handsRequired is what makes co-op structural rather than decorative, and the
+        /// ward ships two retractors because two hands means two owner-authoritative objects,
+        /// never one object with two owners.
         /// </summary>
         private static Procedure BuildExtraction()
         {
             var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_Extraction.asset");
             procedure.displayName = "extraction";
-            procedure.description = "Get the thing out. You cannot do it alone.";
+            procedure.description = "Open them, get the thing out, close them. You cannot do it alone.";
             procedure.steps = new System.Collections.Generic.List<ProcedureStep>
             {
                 new() { displayName = "Sedate", requiredToolId = "gas rig", targetSite = "torso",
-                        handsRequired = 1, holdSeconds = 1.6f, tolerance = 0.45f,
+                        handsRequired = 1, holdSeconds = 1.5f, tolerance = 0.45f,
                         requiresUnconscious = false, wrongToolHarm = 0.05f, sedates = true },
-                new() { displayName = "Hold the seam open", requiredToolId = "retractor", targetSite = "torso",
+                new() { displayName = "Open the seam", requiredToolId = "scalpel", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 3f, tolerance = 0.4f,
+                        wrongToolHarm = 0.15f, opensBleed = true, bleedRatePerSecond = 0.02f },
+                new() { displayName = "Hold it open", requiredToolId = "retractor", targetSite = "torso",
                         handsRequired = 2, holdSeconds = 2f, tolerance = 0.5f,
-                        wrongToolHarm = 0.1f, opensBleed = true, bleedRatePerSecond = 0.02f },
-                new() { displayName = "Extract and close", requiredToolId = "forceps", targetSite = "cavity",
-                        handsRequired = 1, holdSeconds = 2.4f, tolerance = 0.4f,
-                        wrongToolHarm = 0.18f, closesBleed = true },
+                        wrongToolHarm = 0.1f },
+                new() { displayName = "Take it out", requiredToolId = "forceps", targetSite = "cavity",
+                        handsRequired = 1, holdSeconds = 2.5f, tolerance = 0.4f,
+                        wrongToolHarm = 0.18f },
+                new() { displayName = "Close them up", requiredToolId = "suture kit", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 3f, tolerance = 0.4f,
+                        wrongToolHarm = 0.12f, closesBleed = true },
+            };
+            EditorUtility.SetDirty(procedure);
+            return procedure;
+        }
+
+        /// <summary>
+        /// The same shape as an extraction, except the thing inside does not want to come out.
+        ///
+        /// Two separate steps need two people, so a brood pins half a four-person ward to one bed
+        /// while the rest of the night keeps arriving. It also has to go under harder first - a
+        /// brood that wakes up mid-operation is the worst thing that can happen on this table.
+        /// </summary>
+        private static Procedure BuildBroodExtraction()
+        {
+            var procedure = LoadOrCreate<Procedure>($"{SurgeryAssetDir}/Procedure_BroodExtraction.asset");
+            procedure.displayName = "brood extraction";
+            procedure.description = "It is alive, and it does not want to come out. Two of you, at least.";
+            procedure.steps = new System.Collections.Generic.List<ProcedureStep>
+            {
+                new() { displayName = "Sedate deeply", requiredToolId = "gas rig", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 2.5f, tolerance = 0.45f,
+                        requiresUnconscious = false, wrongToolHarm = 0.05f, sedates = true },
+                new() { displayName = "Open the seam", requiredToolId = "scalpel", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 3f, tolerance = 0.4f,
+                        wrongToolHarm = 0.15f, opensBleed = true, bleedRatePerSecond = 0.03f },
+                new() { displayName = "Hold it open", requiredToolId = "retractor", targetSite = "torso",
+                        handsRequired = 2, holdSeconds = 2f, tolerance = 0.5f,
+                        wrongToolHarm = 0.1f },
+                new() { displayName = "Get it out", requiredToolId = "forceps", targetSite = "cavity",
+                        handsRequired = 2, holdSeconds = 3f, tolerance = 0.4f,
+                        wrongToolHarm = 0.2f },
+                new() { displayName = "Close them up", requiredToolId = "suture kit", targetSite = "torso",
+                        handsRequired = 1, holdSeconds = 3f, tolerance = 0.4f,
+                        wrongToolHarm = 0.12f, closesBleed = true },
             };
             EditorUtility.SetDirty(procedure);
             return procedure;
