@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b60b7d5c9f929be49ac48dd2af0c4e51, type: 3}
-  m_Name: Procedure_Extraction
+  m_Name: Procedure_Triage
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Procedure
-  displayName: extraction
-  description: Get the thing out. You cannot do it alone.
+  displayName: triage
+  description: Put them under, close them up, get them out.
   steps:
   - displayName: Sedate
     requiredToolId: gas rig
@@ -27,25 +27,13 @@ MonoBehaviour:
     closesBleed: 0
     sedates: 1
     requiresUnconscious: 0
-  - displayName: Hold the seam open
-    requiredToolId: retractor
+  - displayName: Close them up
+    requiredToolId: suture kit
     targetSite: torso
-    handsRequired: 2
-    tolerance: 0.5
-    holdSeconds: 2
-    wrongToolHarm: 0.1
-    opensBleed: 1
-    bleedRatePerSecond: 0.02
-    closesBleed: 0
-    sedates: 0
-    requiresUnconscious: 1
-  - displayName: Extract and close
-    requiredToolId: forceps
-    targetSite: cavity
     handsRequired: 1
     tolerance: 0.4
     holdSeconds: 2.4
-    wrongToolHarm: 0.18
+    wrongToolHarm: 0.12
     opensBleed: 0
     bleedRatePerSecond: 0.02
     closesBleed: 1

@@ -19,7 +19,8 @@ namespace Probation.Surgery
             "E  take an instrument\n" +
             "RMB  brace against the surface you are looking at\n" +
             "LMB  cut, while braced\n" +
-            "R  close every seam";
+            "LMB  empty-handed, hold pressure on a wound\n" +
+            "R  close every seam and wound";
 
         [SerializeField] private bool showCard = true;
 
@@ -33,6 +34,8 @@ namespace Probation.Surgery
 
             foreach (var seam in Seam.All)
                 if (seam != null) seam.Close();
+
+            Wound.CloseAll();
 
             _resets++;
         }

@@ -24,8 +24,8 @@ namespace Probation.Surgery
     public class ScalpelTool : MonoBehaviour
     {
         [Header("Cut")]
-        [Tooltip("How far ACROSS the seam the tip may stray and still be opening it rather than damaging what is underneath.")]
-        [SerializeField] private float cutRadius = 0.03f;
+        [Tooltip("How far ACROSS the seam the tip may stray and still be opening it rather than cutting what is underneath. Deliberately generous: straying has to read as 'I was sloppy', never as 'I missed by 3 mm'. If a careful drag ever opens a wound, widen this before touching anything else.")]
+        [SerializeField] private float cutRadius = 0.05f;
         [Tooltip("How far the tip may sit off the surface and still be in contact. Measured along the work plane's normal, so holding the blade near the body is forgiving while wandering sideways off the seam is not.")]
         [SerializeField] private float contactDepth = 0.06f;
         [Tooltip("Tip speed at which a drag stops opening and starts tearing. The difficulty knob.")]
@@ -35,8 +35,16 @@ namespace Probation.Surgery
         [Tooltip("Ignore the seam entirely beyond this. Stops a tip halfway across the room grabbing a seam.")]
         [SerializeField] private float seamSearchRadius = 0.35f;
 
+        [Header("Straying")]
+        [Tooltip("How much wound a metre of off-seam dragging opens. Severity, not damage - nothing here kills.")]
+        [SerializeField] private float strayPerMetre = 1.4f;
+        [Tooltip("A stray this close to an existing wound deepens it instead of opening another. Without this, one bad second leaves sixty wounds in a line, which reads as chaos rather than as one mistake.")]
+        [SerializeField] private float woundMergeRadius = 0.04f;
+
         [Header("Feel")]
-        [SerializeField] private float resistanceVolume = 0.55f;
+        [Tooltip("Peak loudness of the drag, at the point of tearing. It is a warning, not an alarm - it has to sit under conversation, because the whole point is that somebody can talk to you while you work.")]
+        [SerializeField] private float resistanceVolume = 0.18f;
+        [SerializeField] private float tearVolume = 0.35f;
         [SerializeField] private float minPitch = 0.7f;
         [SerializeField] private float maxPitch = 1.7f;
 
@@ -52,6 +60,7 @@ namespace Probation.Surgery
         private Grabbable _grabbable;
         private Transform _tip;
         private AudioSource _audio;
+        private AudioClip _tear;
 
         private PlayerBrace _brace;
         private PlayerInputReader _input;
@@ -80,6 +89,7 @@ namespace Probation.Surgery
             // Synthesised rather than authored, the same way VitalsMonitor makes its beeps. A
             // dragged blade is broadband, so this is smoothed noise rather than a tone.
             _audio.clip = Resistance();
+            _tear = TearClip();
             _audio.Play();
         }
 
@@ -140,10 +150,18 @@ namespace Probation.Surgery
 
             if (deviation > cutRadius)
             {
-                // You are cutting the body, not the seam. In this PR that is a mark and a noise;
-                // once there is a body model underneath it is whatever was in the way.
+                // You are cutting the body, not the seam. The seam is safe because it is the one
+                // line with nothing important under it; off it, you cut what IS under it.
+                //
+                // Note what this is NOT: no accuracy score, no damage scaled by how far off you
+                // were, nothing evaluated at the end. A wound, at the point the blade was, now.
+                // Later the body model decides what was there; for now it is just flesh.
                 StraySlices++;
-                Stray(onSeam);
+
+                float amount = strayPerMetre * travel.magnitude;
+                Wound.OpenAt(tip, normal, amount, woundMergeRadius);
+
+                Stray(tip);
                 return;
             }
 
@@ -177,7 +195,9 @@ namespace Probation.Surgery
 
         private void Tear(Vector3 at)
         {
-            if (_audio != null) _audio.PlayOneShot(_audio.clip, 0.9f);
+            // Its own short clip. PlayOneShot on the looping resistance clip fired a full second
+            // of noise at near-full volume, which is not a tear - it is a burst of static.
+            if (_audio != null && _tear != null) _audio.PlayOneShot(_tear, tearVolume);
             Debug.DrawRay(at, Vector3.up * 0.08f, Color.red, 3f);
         }
 
@@ -201,7 +221,7 @@ namespace Probation.Surgery
 
                 // A one-pole low pass. Raw white noise is a hiss; this is a rasp.
                 previous = Mathf.Lerp(previous, white, 0.18f);
-                samples[i] = previous * 1.8f;
+                samples[i] = previous;
             }
 
             // Crossfade the tail into the head so the loop has no click in it.
@@ -212,9 +232,51 @@ namespace Probation.Surgery
                 samples[i] = Mathf.Lerp(samples[samples.Length - blend + i], samples[i], t);
             }
 
+            Normalise(samples);
+
             var clip = AudioClip.Create("ScalpelResistance", samples.Length, 1, rate, false);
             clip.SetData(samples, 0);
             return clip;
+        }
+
+        /// <summary>A quarter second: sharp in, fast out. The sound of something giving way.</summary>
+        private static AudioClip TearClip()
+        {
+            const int rate = 44100;
+            var samples = new float[rate / 4];
+
+            var random = new System.Random(11);
+            float previous = 0f;
+
+            for (int i = 0; i < samples.Length; i++)
+            {
+                float white = (float)(random.NextDouble() * 2.0 - 1.0);
+                previous = Mathf.Lerp(previous, white, 0.42f);        // brighter than the drag
+
+                float t = i / (float)samples.Length;
+                samples[i] = previous * Mathf.Exp(-9f * t);           // sharp attack, fast decay
+            }
+
+            Normalise(samples);
+
+            var clip = AudioClip.Create("ScalpelTear", samples.Length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        /// <summary>
+        /// Scale to peak 1 so the volume fields mean what they say. The old version multiplied
+        /// filtered noise by a guessed 1.8 to make up for the low pass, which both clipped and
+        /// made every volume number a lie.
+        /// </summary>
+        private static void Normalise(float[] samples)
+        {
+            float peak = 0f;
+            foreach (float s in samples) peak = Mathf.Max(peak, Mathf.Abs(s));
+            if (peak <= 1e-5f) return;
+
+            float gain = 1f / peak;
+            for (int i = 0; i < samples.Length; i++) samples[i] *= gain;
         }
 
         // ---------------------------------------------------------------- plumbing
