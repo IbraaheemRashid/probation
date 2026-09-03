@@ -26,7 +26,7 @@ MonoBehaviour:
   untreatedHarmPerSecond: 0.005
   answers:
   - species: {fileID: 0}
-    treatment: {fileID: 11400000, guid: 8adc61a718f4b214bb218de7ac2e9053, type: 2}
+    treatment: {fileID: 11400000, guid: de4861f6ef0c4654088e65daca665f2a, type: 2}
     reliefIfCorrect: 0.35
     harmPerWrongStep: 0.08
     harmIfOperated: 0
