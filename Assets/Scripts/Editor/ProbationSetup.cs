@@ -850,7 +850,13 @@ namespace Probation.EditorTools
             {
                 // The trap. Nothing about this reads as a trap from across the ward, which is
                 // the entire point - it presents exactly like the one you are meant to cut.
-                new() { species = thoracid, treatment = null, harmIfOperated = 1f,
+                //
+                // Not instantly lethal, deliberately. Taking the heart out costs them 0.45 on
+                // top of the per-step harm, and because the condition is never resolved they go
+                // on deteriorating afterwards - so they are dying rather than dead, and a team
+                // who notice can still save them. It becomes the slower, nastier version once
+                // fragility lands and they crash during cover-up instead.
+                new() { species = thoracid, treatment = null, harmIfOperated = 0.45f,
                         reviewLineWrong = "cut open a Thoracid to take out its second heart",
                         reviewLineRight = "left a Thoracid's second heart where it was" },
 

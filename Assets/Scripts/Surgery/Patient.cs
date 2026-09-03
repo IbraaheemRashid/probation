@@ -143,8 +143,13 @@ namespace Probation.Surgery
             // Whatever they walked in with gets worse while nobody is dealing with it. Leaving
             // somebody in a corridor has to be a decision with a price, or triage is just a
             // queue and the order you work in never matters.
+            //
+            // Keyed on whether the condition was actually resolved rather than on whether an
+            // operation finished, which is what gives a misdiagnosis teeth: the ward closes them
+            // up, believes it is done, and the untreated thing goes on quietly killing them all
+            // the way to the discharge door.
             var condition = Condition;
-            if (condition != null && condition.untreatedHarmPerSecond > 0f && !IsTreated)
+            if (condition != null && condition.untreatedHarmPerSecond > 0f && !ConditionResolved)
                 ApplyHarmInternal(condition.untreatedHarmPerSecond * Time.deltaTime, ulong.MaxValue, null);
 
             UpdateVitals();
@@ -196,18 +201,21 @@ namespace Probation.Surgery
         }
 
         /// <summary>
-        /// The patient is out of danger. Called when a procedure completes - without this,
-        /// finishing an operation changes a bool and nothing else, and there is no such thing
-        /// as saving anyone.
+        /// Take some harm back off them. The only thing in the game that moves harm downwards.
+        ///
+        /// This used to be half of a Stabilise() that also stopped the bleeding and put them
+        /// under, which meant finishing any procedure at all fixed everything about a patient.
+        /// Broken into verbs so Operation can compose them differently depending on whether the
+        /// ward actually treated what was wrong - Patient has no business knowing what a
+        /// procedure is, let alone whether it was the right one.
         /// </summary>
-        public void Stabilise()
+        public void Heal(float amount)
         {
-            if (!IsServer || IsDead) return;
+            if (!IsServer || IsDead || amount <= 0f) return;
 
-            _bleedRate = 0f;
-            _harm.Value = Mathf.Max(0f, _harm.Value - 0.35f);
-            _conscious.Value = false;
-            SetState(PatientState.Stable);
+            _harm.Value = Mathf.Max(0f, _harm.Value - amount);
+
+            if (_bleedRate <= 0f && _harm.Value <= 0.75f) SetState(PatientState.Stable);
         }
 
         public void SetConscious(bool conscious)
@@ -238,6 +246,8 @@ namespace Probation.Surgery
             _harm.Value = Mathf.Clamp01(condition != null ? condition.arrivesHarmed : startingHarm);
             _heartRate.Value = Species != null ? Species.restingHeartRate : 70f;
             _conscious.Value = condition == null || !condition.arrivesUnconscious;
+
+            ConditionResolved = false;
 
             // Or the new arrival inherits the last occupant's diagnosis, which is the worst
             // possible version of this bug: the chart reads plausibly and is about someone else.
@@ -270,6 +280,26 @@ namespace Probation.Surgery
 
         /// <summary>What the ward decided to do about them, if anybody has decided yet.</summary>
         public PatientChart Chart => _chart;
+
+        /// <summary>
+        /// Whether the thing that was actually wrong with them has been dealt with.
+        ///
+        /// Pointedly not the same question as <see cref="IsTreated"/>. That one asks whether the
+        /// ward is finished with this patient, which is what the discharge door needs to know.
+        /// This asks whether they are any better, which is what their body needs to know. A
+        /// wrongly diagnosed patient is finished with and not better, and the gap between those
+        /// two is where this entire game lives.
+        ///
+        /// Host-only, and it must stay that way: replicating it would tell every client whether
+        /// their diagnosis was right, and there would be nothing left to work out.
+        /// </summary>
+        public bool ConditionResolved { get; private set; }
+
+        /// <summary>Called by Operation, and only when the right procedure has finished.</summary>
+        public void ResolveCondition()
+        {
+            if (IsServer) ConditionResolved = true;
+        }
 
         /// <summary>Cached because the untreated-harm tick asks every frame, on every patient.</summary>
         private Operation _operation;

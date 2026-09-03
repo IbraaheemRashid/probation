@@ -49,6 +49,44 @@ namespace Probation.Surgery
         /// <summary>Whether this patient is currently somewhere you are allowed to work.</summary>
         public bool InBay { get; private set; }
 
+        /// <summary>
+        /// Whether the ward is treating what is actually wrong with this patient.
+        ///
+        /// Host-side and private, and it has to stay that way. Condition, species and procedure
+        /// all replicate, so a client could work this out for itself - but the moment it reaches
+        /// a HUD, diagnosis is finished and every patient becomes a label to read. It never
+        /// leaves this class, and nothing it drives is ever announced.
+        ///
+        /// A patient with no condition authored at all is treated as correct rather than as
+        /// wrong, so a hand-placed patient in a test scene still behaves.
+        /// </summary>
+        private bool IsCorrect
+        {
+            get
+            {
+                var condition = _patient.Condition;
+                return condition == null || Procedure == condition.TreatmentFor(_patient.Species);
+            }
+        }
+
+        /// <summary>
+        /// Whoever wrote the chart, falling back to a pair of hands when nobody did.
+        ///
+        /// Wrong-procedure harm belongs to the person who made the call. Wrong-tool, awake and
+        /// impact harm stay with the hands, as they always have.
+        /// </summary>
+        private ulong CharterOrHolder()
+        {
+            var chart = _patient.Chart;
+            if (chart != null && chart.ChartedBy != ulong.MaxValue) return chart.ChartedBy;
+
+            foreach (ulong holder in _holders) return holder;
+            return ulong.MaxValue;
+        }
+
+        /// <summary>Relief for a condition with no authored answer. The old Stabilise constant.</summary>
+        private const float DefaultRelief = 0.35f;
+
         public ProcedureStep CurrentStep
         {
             get
@@ -185,6 +223,18 @@ namespace Probation.Surgery
             foreach (var used in _usedThisStep) used.Soil();
             _usedThisStep.Clear();
 
+            // Treating the wrong thing hurts them a little more with every step, and the room is
+            // never told. An announcement here would be a way to brute-force the diagnosis:
+            // start a procedure, wait for the shout, undo. The only feedback is the rate
+            // climbing and the flesh going yellow - the channels somebody was supposed to be
+            // watching. If nobody wheeled the monitor over, nobody finds out.
+            if (!IsCorrect)
+            {
+                var misread = _patient.Condition?.AnswerFor(_patient.Species);
+                if (misread != null && misread.harmPerWrongStep > 0f)
+                    _patient.ApplyHarm(misread.harmPerWrongStep, CharterOrHolder(), null);
+            }
+
             if (step.opensBleed) _patient.StartBleeding(step.bleedRatePerSecond);
             if (step.closesBleed) _patient.StopBleeding();
             if (step.sedates) _patient.SetConscious(false);
@@ -204,11 +254,46 @@ namespace Probation.Surgery
             }
 
             _finished.Value = true;
-            _patient.Stabilise();
+
+            // The wrong procedure still finishes. Never finishing would be a hard block wearing
+            // a costume - it would strand the patient on a bed with no way out and no way to
+            // find out why. It completes, the room is told it completed, and the difference
+            // shows up in the patient rather than in the announcement.
+            _patient.SetConscious(false);
             ShiftDirector.Instance?.Announce($"Patient stabilised. {running.displayName} complete.");
 
-            foreach (ulong holder in _holders)
-                IncidentLog.Record(holder, $"completed the {running.displayName} - patient survived");
+            var answer = _patient.Condition?.AnswerFor(_patient.Species);
+
+            if (IsCorrect)
+            {
+                _patient.ResolveCondition();
+                _patient.StopBleeding();
+                _patient.Heal(answer != null ? answer.reliefIfCorrect : DefaultRelief);
+
+                foreach (ulong holder in _holders)
+                    IncidentLog.Record(holder, $"completed the {running.displayName} - patient survived");
+
+                if (answer != null && !string.IsNullOrEmpty(answer.reviewLineRight))
+                    IncidentLog.Record(CharterOrHolder(), answer.reviewLineRight);
+
+                return;
+            }
+
+            // Nothing is healed and the condition is never marked resolved, so the thing that
+            // was actually wrong goes on working. The suture step still closes the bleed it
+            // opened - stitching is stitching, whatever you were stitching for - so the patient
+            // sits up looking finished and deteriorates all the way to the door. The team
+            // believe they succeeded; the supervisor tells them otherwise.
+            //
+            // Blamed on whoever wrote the chart, not on whoever was holding the forceps - the
+            // surgeon did exactly as they were told, and blaming them would poison the one
+            // screen this whole game exists to produce.
+            if (answer == null) return;
+
+            if (answer.harmIfOperated > 0f)
+                _patient.ApplyHarm(answer.harmIfOperated, CharterOrHolder(), answer.reviewLineWrong);
+            else if (!string.IsNullOrEmpty(answer.reviewLineWrong))
+                IncidentLog.Record(CharterOrHolder(), answer.reviewLineWrong);
         }
 
         /// <summary>Start the procedure over for a newly admitted patient.</summary>
