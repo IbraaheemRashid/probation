@@ -45,6 +45,8 @@ namespace Probation.Surgery
         [Tooltip("Peak loudness of the drag, at the point of tearing. It is a warning, not an alarm - it has to sit under conversation, because the whole point is that somebody can talk to you while you work.")]
         [SerializeField] private float resistanceVolume = 0.18f;
         [SerializeField] private float tearVolume = 0.35f;
+        [Tooltip("Going off the line. Quieter than a tear on purpose - it is a slip, not a catastrophe - but it must never be silent, which it was.")]
+        [SerializeField] private float strayVolume = 0.22f;
         [SerializeField] private float minPitch = 0.7f;
         [SerializeField] private float maxPitch = 1.7f;
 
@@ -61,6 +63,7 @@ namespace Probation.Surgery
         private Transform _tip;
         private AudioSource _audio;
         private AudioClip _tear;
+        private AudioClip _stray;
 
         private PlayerBrace _brace;
         private PlayerInputReader _input;
@@ -90,6 +93,7 @@ namespace Probation.Surgery
             // dragged blade is broadband, so this is smoothed noise rather than a tone.
             _audio.clip = Resistance();
             _tear = TearClip();
+            _stray = StrayClip();
             _audio.Play();
         }
 
@@ -201,9 +205,47 @@ namespace Probation.Surgery
             Debug.DrawRay(at, Vector3.up * 0.08f, Color.red, 3f);
         }
 
+        /// <summary>
+        /// Going off the line was completely silent until now.
+        ///
+        /// That is the worst of the three outcomes to leave unannounced. A tear at least tells
+        /// you - it fires a clip and yellows the seam. A stray opened a bleeding wound somebody
+        /// else now has to walk over and put a hand on, and the only feedback was an editor-only
+        /// debug ray that does not exist in a build. You could ruin somebody's patient and hear
+        /// nothing at all.
+        ///
+        /// Duller and softer than the tear on purpose. A tear is sharp and bright and should make
+        /// you flinch; a stray is a wet slip into flesh, and it has to be distinguishable from a
+        /// tear with your eyes on the seam rather than the HUD.
+        /// </summary>
         private void Stray(Vector3 at)
         {
+            if (_audio != null && _stray != null) _audio.PlayOneShot(_stray, strayVolume);
             Debug.DrawRay(at, Vector3.up * 0.04f, new Color(1f, 0.6f, 0f), 1.5f);
+        }
+
+        private static AudioClip StrayClip()
+        {
+            const int rate = 44100;
+            var samples = new float[rate * 18 / 100];
+
+            var random = new System.Random(23);
+            float previous = 0f;
+
+            for (int i = 0; i < samples.Length; i++)
+            {
+                float white = (float)(random.NextDouble() * 2.0 - 1.0);
+                previous = Mathf.Lerp(previous, white, 0.10f);        // duller than the drag rasp
+
+                float t = i / (float)samples.Length;
+                samples[i] = previous * Mathf.Exp(-5f * t);           // softer than a tear, longer tail
+            }
+
+            Normalise(samples);
+
+            var clip = AudioClip.Create("ScalpelStray", samples.Length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
         }
 
         /// <summary>One second of smoothed noise, looped. Blade against tissue, near enough to tune against.</summary>
