@@ -202,9 +202,23 @@ namespace Probation.Game
             if (patient == null) return;
 
             var operation = patient.GetComponent<Operation>();
-            if (operation == null || operation.Procedure == null) return;
+            if (operation == null) return;
 
-            GUILayout.BeginArea(new Rect(Screen.width * 0.5f - 200f, Screen.height - 96f, 400f, 88f), GUI.skin.box);
+            var rect = new Rect(Screen.width * 0.5f - 200f, Screen.height - 96f, 400f, 88f);
+
+            // Says that the ward has not decided, rather than showing nothing. An empty panel
+            // reads as a bug; this reads as a job somebody has not done, which it is.
+            if (operation.Procedure == null)
+            {
+                GUILayout.BeginArea(rect, GUI.skin.box);
+                GUILayout.Label(patient.Chart != null
+                    ? "<b>No chart written.</b>   Scan them, decide, write it up at the foot of the bed."
+                    : "<b>No chart on this bed.</b>", _label);
+                GUILayout.EndArea();
+                return;
+            }
+
+            GUILayout.BeginArea(rect, GUI.skin.box);
 
             if (operation.Finished)
             {

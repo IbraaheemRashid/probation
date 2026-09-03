@@ -136,14 +136,10 @@ namespace Probation.Game
 
             waiting.Admit(drawnSpecies, drawnCondition);
 
-            var operation = waiting.GetComponent<Operation>();
-            operation?.Restart();
-
-            // TEMPORARY SCAFFOLD. Hands the ward the correct answer so a night is playable
-            // before the chart exists. Delete this the moment PatientChart lands - a game that
-            // assigns the right procedure by itself has made diagnosis decorative, which is
-            // precisely the thing this whole system exists to stop.
-            operation?.Assign(drawnCondition != null ? drawnCondition.TreatmentFor(drawnSpecies) : null);
+            // Restart and nothing else. Intake deliberately does not assign a procedure, even
+            // though it is holding the correct one right here - somebody has to read the patient
+            // and write the chart, or there was never a decision to get wrong.
+            waiting.GetComponent<Operation>()?.Restart();
 
             target.Load(waiting);
             return true;

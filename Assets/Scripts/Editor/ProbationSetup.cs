@@ -1025,6 +1025,32 @@ namespace Probation.EditorTools
             Site(go.transform, "torso", new Vector3(0f, 0.2f, 0f));
             Site(go.transform, "cavity", new Vector3(0f, 0.2f, 0.45f));
 
+            Chart(go.transform);
+        }
+
+        /// <summary>
+        /// The board at the foot of the bed.
+        ///
+        /// Its own GameObject, and that is load-bearing rather than tidy: PlayerInteractor
+        /// resolves focus through GetComponentInParent&lt;IInteractable&gt;, and the patient root is
+        /// already a Grabbable, which is one too. On the root they would fight over the prompt
+        /// and the winner would depend on component order. The collider is a trigger so it stays
+        /// out of the patient's compound collider, where it would corrupt the impact speeds
+        /// Patient.OnCollisionEnter reads - PlayerInteractor casts against triggers anyway.
+        /// </summary>
+        private static void Chart(Transform parent)
+        {
+            var go = new GameObject("Chart");
+            go.transform.SetParent(parent, false);
+
+            // Local space, so these are multiplied by the patient's own scale.
+            go.transform.localPosition = new Vector3(0f, 0.8f, -0.62f);
+
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(1.1f, 1.2f, 0.2f);
+
+            go.AddComponent<PatientChart>();
         }
 
         /// <summary>
@@ -1564,6 +1590,17 @@ namespace Probation.EditorTools
                                $"{arrival.species.displayName}, and no fallback. That patient can " +
                                "be admitted and never correctly treated.");
                 problems++;
+            }
+
+            // A patient with no chart cannot be diagnosed, cannot be operated on, and cannot be
+            // discharged - they simply occupy a bed all night. Repair rather than report: wards
+            // built before the chart existed are otherwise unplayable and give no reason why.
+            foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
+            {
+                if (patient.GetComponentInChildren<PatientChart>(true) != null) continue;
+
+                Chart(patient.transform);
+                Debug.Log($"[Verify] Added the missing chart to {patient.name}.");
             }
 
             // Operation.SiteFor returns null on a miss and Evaluate silently does nothing, so a

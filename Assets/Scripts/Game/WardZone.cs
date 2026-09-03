@@ -51,12 +51,17 @@ namespace Probation.Game
 
                 if (!patient.IsTreated)
                 {
-                    director?.Announce("You have not finished with that one.");
+                    var unfinished = patient.Chart;
+                    director?.Announce(unfinished == null || !unfinished.IsWritten
+                        ? "Nobody has charted that one."
+                        : "You have not finished with that one.");
                     return;
                 }
 
                 director?.RecordDischarge();
                 director?.Announce("Patient discharged.");
+
+                ChargeForSendingThemHomeUntreated(patient, director);
             }
             else
             {
@@ -70,6 +75,30 @@ namespace Probation.Game
             }
 
             patient.SendAway();
+        }
+
+        /// <summary>
+        /// The moment a no-operation chart counts as treated, the obvious play is to chart every
+        /// arrival "no operation" and wheel the lot straight out for a free quota.
+        ///
+        /// That is closed here rather than by refusing the discharge, because refusing it would
+        /// be a hard block and this ward never blocks. They walk out, the quota moves, and the
+        /// thing nobody took out of them kills them at home. Tonight is satisfied. The week is
+        /// the thing that pays, through the hospital's body count - and the review names whoever
+        /// wrote the chart, not whoever pushed the trolley.
+        /// </summary>
+        private static void ChargeForSendingThemHomeUntreated(Patient patient, ShiftDirector director)
+        {
+            var chart = patient.Chart;
+            if (chart == null || !chart.SaysNoOperation) return;
+
+            var condition = patient.Condition;
+            if (condition == null || condition.TreatmentFor(patient.Species) == null) return;
+
+            director?.RecordDeath();
+
+            string species = patient.Species != null ? patient.Species.displayName : "patient";
+            IncidentLog.Record(chart.ChartedBy, $"sent a {species} home untreated - it came back");
         }
     }
 }

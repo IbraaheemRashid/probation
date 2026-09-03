@@ -239,6 +239,10 @@ namespace Probation.Surgery
             _heartRate.Value = Species != null ? Species.restingHeartRate : 70f;
             _conscious.Value = condition == null || !condition.arrivesUnconscious;
 
+            // Or the new arrival inherits the last occupant's diagnosis, which is the worst
+            // possible version of this bug: the chart reads plausibly and is about someone else.
+            _chart?.Clear();
+
             SetState(_bleedRate > 0f ? PatientState.Bleeding : PatientState.Stable);
         }
 
@@ -249,15 +253,36 @@ namespace Probation.Surgery
         public bool HasLeft { get; private set; } = true;
 
         /// <summary>Their procedure is done and they are alive. The only thing the quota counts.</summary>
-        public bool IsTreated => !IsDead && _operation != null && _operation.Finished;
+        public bool IsTreated
+        {
+            get
+            {
+                if (IsDead) return false;
+                if (_operation != null && _operation.Finished) return true;
+
+                // Deciding not to operate is a treatment, and it has to be, or a patient whose
+                // correct answer is "leave them alone" can never satisfy the discharge door and
+                // their bed is gone for the night. Whether the decision was right is settled at
+                // the door rather than here - this game does not block, it charges.
+                return _chart != null && _chart.SaysNoOperation;
+            }
+        }
+
+        /// <summary>What the ward decided to do about them, if anybody has decided yet.</summary>
+        public PatientChart Chart => _chart;
 
         /// <summary>Cached because the untreated-harm tick asks every frame, on every patient.</summary>
         private Operation _operation;
+        private PatientChart _chart;
 
         /// <summary>The rate bleedOutSeconds is expressed against. A species at 45 bleeds as authored.</summary>
         private const float BaselineBleedOutSeconds = 45f;
 
-        private void Awake() => _operation = GetComponent<Operation>();
+        private void Awake()
+        {
+            _operation = GetComponent<Operation>();
+            _chart = GetComponentInChildren<PatientChart>(true);
+        }
 
         /// <summary>
         /// Leave the ward. The body is parked out of the way and its bed freed, ready to be
