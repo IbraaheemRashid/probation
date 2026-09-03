@@ -26,6 +26,12 @@ namespace Probation.Game
         [Tooltip("How fast a coding patient bleeds. This one is meant to hurt.")]
         [SerializeField] private float codeBleedRate = 0.05f;
 
+        [Header("Cover-up - the bill for what you thought you got away with")]
+        [Tooltip("How fragile a patient has to be before the night catches up with them.")]
+        [SerializeField] private float crashThreshold = 0.35f;
+        [Tooltip("Harm per second during cover-up, scaled by how fragile they are.")]
+        [SerializeField] private float crashHarmPerSecond = 0.09f;
+
         private System.Random _rng;
         private int _seededForDay = -1;
         private float _nextHiccup;
@@ -36,7 +42,15 @@ namespace Probation.Game
             if (!IsServer) return;
 
             var director = ShiftDirector.Instance;
-            if (director == null || director.Phase != ShiftPhase.Shift) return;
+            if (director == null) return;
+
+            if (director.Phase == ShiftPhase.CoverUp)
+            {
+                CoverUp();
+                return;
+            }
+
+            if (director.Phase != ShiftPhase.Shift) return;
 
             SeedForNight(director.Day);
 
@@ -63,6 +77,7 @@ namespace Probation.Game
 
             _seededForDay = day;
             _rng = new System.Random(day * 7919);
+            _crashing.Clear();
             _nextHiccup = Time.time + Range(hiccupGapMin, hiccupGapMax);
             _nextCode = Time.time + Range(codeGapMin, codeGapMax);
         }
@@ -94,6 +109,44 @@ namespace Probation.Game
             patient.SetConscious(true);
             ShiftDirector.Instance?.Announce("CODE. Somebody is crashing.");
         }
+
+        /// <summary>
+        /// The twenty seconds after the doors shut, which until now were a title card that no
+        /// system in the game read.
+        ///
+        /// Anybody you only half fixed comes apart here. Note exactly what that costs, because
+        /// the timing is the whole design: ShiftDirector scores the quota on the Shift to CoverUp
+        /// transition, so a patient who dies now has already been counted or has already failed
+        /// to count. It cannot touch tonight. It goes on the hospital's body count, which is the
+        /// thing that ends the run.
+        ///
+        /// So a cover-up death does not cost you the night. It costs you the week - which is
+        /// precisely what the phase is named after.
+        ///
+        /// The discharge door stays open throughout, so these twenty seconds are damage control
+        /// and not a cutscene: wheel them out and you can still save them.
+        /// </summary>
+        private void CoverUp()
+        {
+            foreach (var patient in Patient.All)
+            {
+                if (patient == null || patient.HasLeft || patient.IsDead) continue;
+                if (patient.Fragility < crashThreshold) continue;
+
+                // Named to whoever wrote the chart, so if this one dies the review reads out the
+                // decision that killed them rather than "a patient was lost".
+                ulong blame = patient.Chart != null ? patient.Chart.ChartedBy : ulong.MaxValue;
+
+                patient.ApplyHarm(patient.Fragility * crashHarmPerSecond * Time.deltaTime,
+                                  blame, null);
+
+                if (_crashing.Add(patient))
+                    ShiftDirector.Instance?.Announce("Somebody is going off in theatre.");
+            }
+        }
+
+        /// <summary>Announced once each, not once a frame.</summary>
+        private readonly System.Collections.Generic.HashSet<Patient> _crashing = new();
 
         private Patient PickOnWard(bool alive)
         {
