@@ -397,6 +397,14 @@ namespace Probation.EditorTools
                 ("interactor", contents.GetComponent<PlayerInteractor>()),
                 ("carry", contents.GetComponent<PlayerCarry>()));
 
+            // The prefab has never had a renderer on it, so interns have always been invisible to
+            // one another. PlayerBody builds its own primitives, so authoring it is just this.
+            if (contents.GetComponent<PlayerBody>() == null)
+            {
+                contents.AddComponent<PlayerBody>();
+                Debug.Log("[Probation] Added missing PlayerBody to the Player prefab.");
+            }
+
             return (brace, hands);
         }
 

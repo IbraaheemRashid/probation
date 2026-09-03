@@ -133,8 +133,26 @@ namespace Probation.Interaction
             _rb.isKinematic = someoneElseHasIt;
         }
 
+        /// <summary>
+        /// Everything grabbable in the scene, so anybody asking "what is that intern holding?"
+        /// does not have to search it. Same pattern as Patient.All and Gurney.All.
+        /// </summary>
+        public static readonly System.Collections.Generic.List<Grabbable> All = new();
+
+        /// <summary>What this client is holding, if anything. Held state replicates, so this
+        /// answers for remote players too - which is what makes another intern's hands readable.</summary>
+        public static Grabbable HeldByClient(ulong clientId)
+        {
+            foreach (var grabbable in All)
+                if (grabbable != null && grabbable.IsHeldBy(clientId)) return grabbable;
+
+            return null;
+        }
+
         public override void OnNetworkSpawn()
         {
+            All.Add(this);
+
             _heldBy.OnValueChanged += (_, __) => RefreshRemoteSimulation();
             RefreshRemoteSimulation();
 
@@ -145,6 +163,8 @@ namespace Probation.Interaction
 
         public override void OnNetworkDespawn()
         {
+            All.Remove(this);
+
             if (IsServer && NetworkManager != null)
                 NetworkManager.OnClientDisconnectCallback -= ForceRelease;
         }
