@@ -1,4 +1,5 @@
 using Probation.Interaction;
+using Probation.Surgery;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -41,6 +42,7 @@ namespace Probation.Player
         private PlayerInteractor _interactor;
         private PlayerCarry _carry;
         private PlayerBrace _brace;
+        private PlayerHands _hands;
 
         private Collider _aim;
         private Grabbable _aimGrabbable;
@@ -79,6 +81,7 @@ namespace Probation.Player
             _interactor = local.GetComponent<PlayerInteractor>();
             _carry = local.GetComponent<PlayerCarry>();
             _brace = local.GetComponent<PlayerBrace>();
+            _hands = local.GetComponent<PlayerHands>();
 
             Probe();
         }
@@ -151,6 +154,13 @@ namespace Probation.Player
                 GUILayout.Label($"cannot take {_aimGrabbable.DisplayName}   " +
                                 $"(held {_aimGrabbable.IsHeld})", _centred);
 
+            // Holding pressure is the one job that shows no progress, so it has to say so - a
+            // player with a hand on a wound needs to see that it is working.
+            if (_hands != null && _hands.Pressing != null)
+                GUILayout.Label("HOLDING PRESSURE   -   release to let it bleed", _centred);
+            else if (_carry != null && !_carry.IsCarrying && Wound.OpenCount > 0)
+                GUILayout.Label("LMB   Hold pressure on a wound", _centred);
+
             // What RMB would do, and why it would not.
             if (_brace == null)
                 GUILayout.Label("no PlayerBrace on the player", _centred);
@@ -211,6 +221,13 @@ namespace Probation.Player
             if (_brace == null) GUILayout.Label("brace    COMPONENT MISSING");
             else if (_brace.IsBraced) GUILayout.Label($"brace    braced   blend {_brace.Blend:0.00}");
             else GUILayout.Label($"brace    {(_brace.CanBrace(out string why, out _) ? "ready" : why)}");
+
+            // If this climbs by one every frame while straying, merging is broken - that is the
+            // number that tells you chaos from one mistake.
+            int held = 0;
+            foreach (var w in Wound.All) if (w != null && w.IsOpen && w.UnderPressure) held++;
+            GUILayout.Label($"wounds   {Wound.OpenCount} open   {held} held" +
+                            (_hands != null && _hands.Pressing != null ? "   (you)" : ""));
 
             GUILayout.EndArea();
         }

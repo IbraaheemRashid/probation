@@ -20,6 +20,7 @@ namespace Probation.Player
         [SerializeField] private PlayerInteractor interactor;
         [SerializeField] private PlayerCarry carry;
         [SerializeField] private PlayerBrace brace;
+        [SerializeField] private PlayerHands hands;
         [SerializeField] private CursorLock cursorLock;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private AudioListener audioListener;
@@ -53,14 +54,21 @@ namespace Probation.Player
         /// </summary>
         private void Awake()
         {
-            if (brace != null) return;
+            brace = Ensure(brace);
+            hands = Ensure(hands);
+        }
 
-            brace = GetComponent<PlayerBrace>();
-            if (brace != null) return;
+        private T Ensure<T>(T existing) where T : MonoBehaviour
+        {
+            if (existing != null) return existing;
 
-            brace = gameObject.AddComponent<PlayerBrace>();
-            Debug.Log("[Probation] Player prefab had no PlayerBrace - added one at runtime. " +
+            var found = GetComponent<T>();
+            if (found != null) return found;
+
+            var added = gameObject.AddComponent<T>();
+            Debug.Log($"[Probation] Player prefab had no {typeof(T).Name} - added one at runtime. " +
                       "Run Probation > Setup > 4 to make it stick.", this);
+            return added;
         }
 
         public override void OnNetworkSpawn()
@@ -90,6 +98,7 @@ namespace Probation.Player
             // because its reader is disabled and reports no input, but it would still write that
             // player's camera and hand anchor every frame for nobody's benefit.
             if (brace != null) brace.enabled = mine;
+            if (hands != null) hands.enabled = mine;
 
             // Only one of these may ever be live, or Unity logs an error every frame and
             // proximity voice picks the wrong ears.

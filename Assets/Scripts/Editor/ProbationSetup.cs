@@ -250,7 +250,7 @@ namespace Probation.EditorTools
                 var pivot = contents.transform.Find("CameraPivot");
                 var camera = pivot != null ? pivot.Find("Camera") : null;
 
-                var brace = WireBrace(contents);
+                var (brace, hands) = WireVerbs(contents);
 
                 SetRefs(setup,
                     ("input", contents.GetComponent<PlayerInputReader>()),
@@ -260,6 +260,7 @@ namespace Probation.EditorTools
                     ("cursorLock", cursorLock),
                     ("carry", carry),
                     ("brace", brace),
+                    ("hands", hands),
                     ("playerCamera", camera != null ? camera.GetComponent<Camera>() : null),
                     ("audioListener", camera != null ? camera.GetComponent<AudioListener>() : null),
                     ("body", contents.GetComponent<Rigidbody>()));
@@ -341,7 +342,33 @@ namespace Probation.EditorTools
         /// somebody remembered to run step 4 - a prefab with no PlayerBrace on it presents as
         /// "right mouse does nothing", with no error anywhere to explain why.
         /// </summary>
-        private static PlayerBrace WireBrace(GameObject contents)
+        private static PlayerBrace WireBrace(GameObject contents) => WireVerbs(contents).brace;
+
+        /// <summary>
+        /// Add and wire the components that carry the surgical verbs - bracing, and the bare hand
+        /// that holds pressure. Both are newer than the Player prefab, so both are missing from
+        /// anything authored before them.
+        /// </summary>
+        private static (PlayerBrace brace, PlayerHands hands) WireVerbs(GameObject contents)
+        {
+            var brace = AddBrace(contents);
+
+            var hands = contents.GetComponent<PlayerHands>();
+            if (hands == null)
+            {
+                hands = contents.AddComponent<PlayerHands>();
+                Debug.Log("[Probation] Added missing PlayerHands to the Player prefab.");
+            }
+
+            SetRefs(hands,
+                ("input", contents.GetComponent<PlayerInputReader>()),
+                ("interactor", contents.GetComponent<PlayerInteractor>()),
+                ("carry", contents.GetComponent<PlayerCarry>()));
+
+            return (brace, hands);
+        }
+
+        private static PlayerBrace AddBrace(GameObject contents)
         {
             var pivot = contents.transform.Find("CameraPivot");
             var camera = pivot != null ? pivot.Find("Camera") : null;
@@ -381,17 +408,18 @@ namespace Probation.EditorTools
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             if (prefab == null) return false;
 
-            if (prefab.GetComponent<PlayerBrace>() != null) return true;
+            if (prefab.GetComponent<PlayerBrace>() != null &&
+                prefab.GetComponent<PlayerHands>() != null) return true;
 
             var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
             try
             {
-                var brace = WireBrace(contents);
+                var (brace, hands) = WireVerbs(contents);
 
-                // Without this the gate in PlayerNetworkSetup never fires and remote players keep
-                // a live PlayerBrace.
+                // Without these the gates in PlayerNetworkSetup never fire and remote players keep
+                // live copies of both.
                 var setup = contents.GetComponent<PlayerNetworkSetup>();
-                if (setup != null) SetRefs(setup, ("brace", brace));
+                if (setup != null) SetRefs(setup, ("brace", brace), ("hands", hands));
 
                 PrefabUtility.SaveAsPrefabAsset(contents, PlayerPrefabPath);
             }
@@ -1030,6 +1058,17 @@ namespace Probation.EditorTools
 
             // Near vertical. The awkward case: braced against something you cannot look down at.
             Station("Upright 75deg", new Vector3(-2.8f, 0f, stationZ), tilt: 75f);
+
+            // Wounds are pooled, like patients and gurneys - nothing in this project spawns a
+            // prefab at runtime. Twelve is well past what merging should ever let you reach; if
+            // you can exhaust it, the merge radius is too small.
+            var wounds = new GameObject("Wounds");
+            for (int i = 0; i < 12; i++)
+            {
+                var go = new GameObject($"Wound {i}");
+                go.transform.SetParent(wounds.transform, false);
+                go.AddComponent<Wound>();
+            }
 
             WarnIfSpawnBlocked();
 

@@ -195,8 +195,8 @@ namespace Probation.Surgery
             SetState(PatientState.Stable);
         }
 
-        /// <summary>Which bed this is on, if any. Set by WardBed.</summary>
-        public Probation.Game.WardBed Bed { get; set; }
+        /// <summary>The trolley this one is on, if any. Set by Gurney.</summary>
+        public Probation.Game.Gurney Ride { get; set; }
 
         /// <summary>Off the ward entirely - discharged or in the morgue. Waiting to be re-used.</summary>
         public bool HasLeft { get; private set; } = true;
@@ -220,7 +220,7 @@ namespace Probation.Surgery
             if (!IsServer || HasLeft) return;
 
             HasLeft = true;
-            Bed?.Clear();
+            Ride?.Unload();
 
             var body = GetComponent<Rigidbody>();
             if (body != null)

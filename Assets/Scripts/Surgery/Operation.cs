@@ -33,6 +33,9 @@ namespace Probation.Surgery
         public float Progress => _progress.Value;
         public bool Finished => _finished.Value;
 
+        /// <summary>Whether this patient is currently somewhere you are allowed to work.</summary>
+        public bool InBay { get; private set; }
+
         public ProcedureStep CurrentStep =>
             procedure != null && _stepIndex.Value < procedure.steps.Count
                 ? procedure.steps[_stepIndex.Value]
@@ -56,6 +59,11 @@ namespace Probation.Surgery
         {
             if (!IsServer || _finished.Value || _patient.IsDead) return;
             if (procedure == null || procedure.steps.Count == 0) return;
+
+            // You cannot operate in a corridor. This is what makes wheeling somebody to a bay a
+            // job rather than a formality, and it is the reason the map has rooms in it.
+            InBay = Probation.Game.OperatingBay.Holding(_patient) != null;
+            if (!InBay) return;
 
             Evaluate(CurrentStep);
         }

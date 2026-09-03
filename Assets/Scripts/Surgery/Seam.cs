@@ -22,10 +22,14 @@ namespace Probation.Surgery
         [SerializeField] private Transform[] points;
 
         [Header("Look")]
-        [SerializeField] private Color closedColour = new(0.45f, 0.13f, 0.16f, 1f);
+        // Faint when closed, unmistakable when open. The GDD asks for "a faint seam in the flesh":
+        // you should have to brace and look to read it, so that finding the line is part of the
+        // job rather than following a rail somebody painted for you. It is also what lets an
+        // unfamiliar species be harder without a single new mechanic.
+        [SerializeField] private Color closedColour = new(0.30f, 0.17f, 0.18f, 1f);
         [SerializeField] private Color openColour = new(0.95f, 0.32f, 0.30f, 1f);
         [SerializeField] private Color tornColour = new(0.85f, 0.72f, 0.15f, 1f);
-        [SerializeField] private float closedWidth = 0.004f;
+        [SerializeField] private float closedWidth = 0.0022f;
         [SerializeField] private float openWidth = 0.03f;
 
         /// <summary>Every seam in the scene. Cheaper than searching, and the convention the ward already uses.</summary>
