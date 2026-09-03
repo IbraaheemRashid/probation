@@ -41,13 +41,12 @@ namespace Probation.Player
         [Header("Hand pose, relative to the camera pivot")]
         [Tooltip("Empty hands, at your sides. Deliberately outside your own view - hidden for the owner anyway.")]
         [SerializeField] private Vector3 restHand = new(0.34f, -0.5f, 0.1f);
-        [Tooltip("Hands full. Drawn in around whatever is at the HandAnchor, and in view of the owner.")]
-        [SerializeField] private Vector3 busyHand = new(0.17f, -0.19f, 0.48f);
+        [Tooltip("How far either side of the held object each hand sits. The grip position itself comes from the HandAnchor.")]
+        [SerializeField] private float graspSpread = 0.15f;
         [SerializeField] private float handEase = 12f;
-        [Tooltip("How far a hand will follow the thing it is holding before it stops reaching. Keeps a dragging gurney, or a desynced remote, from throwing an arm across the room.")]
-        [SerializeField] private float maxReach = 0.95f;
 
         private Transform _pivot;
+        private Transform _handAnchor;
         private Transform _torso;
         private Transform _skull;
         private Transform _leftHand;
@@ -72,6 +71,7 @@ namespace Probation.Player
             _carry = GetComponent<PlayerCarry>();
             _hands = GetComponent<PlayerHands>();
             _pivot = transform.Find("CameraPivot");
+            _handAnchor = _pivot != null ? _pivot.Find("HandAnchor") : null;
 
             Build();
         }
@@ -98,9 +98,9 @@ namespace Probation.Player
                           new Vector3(0f, 0f, 0.06f), Vector3.one * (radius * 1.05f));
 
             _leftHand = Part(PrimitiveType.Cube, "Hand L", headParent,
-                             new Vector3(-restHand.x, restHand.y, restHand.z), Vector3.one * HandSize);
+                             new Vector3(-restHand.x, restHand.y, restHand.z), Vector3.one * 0.12f);
             _rightHand = Part(PrimitiveType.Cube, "Hand R", headParent,
-                              restHand, Vector3.one * HandSize);
+                              restHand, Vector3.one * 0.12f);
         }
 
         private static Transform Part(PrimitiveType shape, string name, Transform parent,
@@ -221,8 +221,7 @@ namespace Probation.Player
         {
             if (!_dressed && _net != null && _net.IsSpawned) Dress();
 
-            _held = HeldObject();
-            HandsFull = _held != null || PressingSomething();
+            HandsFull = IsCarrying();
 
             // Your own hands appear only while they are doing something. Idle hands would be a
             // viewmodel telling you a fact you already have, in exchange for two blocks sitting
@@ -231,107 +230,32 @@ namespace Probation.Player
 
             // LateUpdate so look and locomotion have already moved the pivot this frame.
             float t = 1f - Mathf.Exp(-handEase * Time.deltaTime);
-            Vector3 right = busyHand, left = new(-busyHand.x, busyHand.y, busyHand.z);
 
-            if (TryWorkPoint(out Vector3 work))
-            {
-                // A tool is one hand, with the other steadying nearby. Anything Heavy is a
-                // two-hand job by definition - it is why handsRequired exists at all - so both go
-                // on it, spread apart, and a gurney being pushed reads as being pushed.
-                bool twoHanded = _held != null && _held.Kind != GrabKind.Tool;
+            Ease(_rightHand, HandsFull ? Grasp(+1f) : restHand, t);
+            Ease(_leftHand, HandsFull ? Grasp(-1f) : new Vector3(-restHand.x, restHand.y, restHand.z), t);
+        }
 
-                right = twoHanded ? work + Vector3.right * 0.13f : work;
-                left = twoHanded ? work + Vector3.left * 0.13f : new Vector3(-busyHand.x, busyHand.y, busyHand.z);
-            }
-            else if (!HandsFull)
-            {
-                right = restHand;
-                left = new Vector3(-restHand.x, restHand.y, restHand.z);
-            }
-
-            if (_rightHand != null)
-                _rightHand.localPosition = Vector3.Lerp(_rightHand.localPosition, right, t);
-
-            if (_leftHand != null)
-                _leftHand.localPosition = Vector3.Lerp(_leftHand.localPosition, left, t);
+        private static void Ease(Transform hand, Vector3 target, float t)
+        {
+            if (hand != null) hand.localPosition = Vector3.Lerp(hand.localPosition, target, t);
         }
 
         /// <summary>
-        /// Where the hands actually have to be, in pivot-local space.
+        /// Where a hand goes when it is full: to either side of whatever is actually being held.
         ///
-        /// Deliberately the object's own transform rather than the HandAnchor it is heading
-        /// towards. A carried tool is spring-driven at the anchor, not parented to it, so it lags
-        /// and wobbles by design - a hand pinned to the anchor would sit next to the thing it is
-        /// supposedly holding rather than on it, and the gap would be worst exactly when somebody
-        /// is moving fast and you are most likely to be watching them.
+        /// Derived from the HandAnchor rather than authored next to it, because the two drifting
+        /// apart is exactly the bug this replaces - the anchor sat out at x 0.25 while the hands
+        /// bracketed the centre line at 0.17, so a carried tool floated past the outside of the
+        /// right hand instead of between them. One source of truth means that cannot recur, and
+        /// moving the anchor now moves the grip with it.
         /// </summary>
-        private bool TryWorkPoint(out Vector3 local)
+        private Vector3 Grasp(float side)
         {
-            local = Vector3.zero;
-            if (_pivot == null) return false;
-
-            Transform target = null;
-            if (_held != null) target = _held.transform;
-            else if (_isOwner && _hands != null && _hands.Pressing != null) target = _hands.Pressing.transform;
-
-            if (target == null) return false;
-
-            // Sit the hand ON the thing, not in it.
-            //
-            // An object's transform is its centre, and a hand parked there is a block buried
-            // inside a scalpel - which reads as two things intersecting rather than as a grip.
-            // Backing off along the line towards the wrist by the object's own extent puts the
-            // hand against the surface facing you, which is where a hand would actually be.
-            //
-            // It scales with the object for free: a tool gets held near its middle because it is
-            // small, and a gurney gets held at the near rail because that is where its surface
-            // is. No per-object data, and it stays right if anything is ever resized.
-            Vector3 centre = target.position;
-            Vector3 toWrist = _pivot.position - centre;
-
-            if (toWrist.sqrMagnitude > 1e-6f)
-            {
-                float distance = toWrist.magnitude;
-                Vector3 dir = toWrist / distance;
-
-                // Never back off further than the thing actually is. A gurney is nearly two
-                // metres long, so standing at one end puts its centre closer to you than its own
-                // extent - and the unclamped answer would place your hand somewhere behind your
-                // own shoulders.
-                float backoff = Mathf.Min(SurfaceOffset(target, dir) + HandSize * 0.5f,
-                                          distance * 0.85f);
-
-                centre += dir * backoff;
-            }
-
-            // Clamped so a heavy object dragging behind you does not pull an arm out of its
-            // socket, and so a desynced remote never throws a hand across the room.
-            local = Vector3.ClampMagnitude(_pivot.InverseTransformPoint(centre), maxReach);
-            return true;
+            Vector3 held = _handAnchor != null ? _handAnchor.localPosition : FallbackGrasp;
+            return held + new Vector3(side * graspSpread, 0f, 0f);
         }
 
-        /// <summary>
-        /// How far the object's surface is from its centre, in one direction.
-        ///
-        /// The standard support function for an axis-aligned box, which is what
-        /// <see cref="Renderer.bounds"/> gives - so an elongated tool held end-on returns its
-        /// long extent and the same tool held side-on returns its short one, without either
-        /// needing to be authored.
-        /// </summary>
-        private static float SurfaceOffset(Transform target, Vector3 direction)
-        {
-            var renderer = target.GetComponentInChildren<Renderer>();
-            if (renderer == null) return 0f;
-
-            Vector3 extents = renderer.bounds.extents;
-            return Mathf.Abs(extents.x * direction.x)
-                 + Mathf.Abs(extents.y * direction.y)
-                 + Mathf.Abs(extents.z * direction.z);
-        }
-
-        private const float HandSize = 0.12f;
-
-        private Grabbable _held;
+        private static readonly Vector3 FallbackGrasp = new(0.08f, -0.22f, 0.44f);
 
         /// <summary>
         /// Whether this intern's hands are occupied.
@@ -344,30 +268,18 @@ namespace Probation.Player
         /// purest example of a player who is busy and making no progress. Wounds are not
         /// networked, so there is currently nothing to read on a remote client.
         /// </summary>
-        private Grabbable HeldObject()
+        private bool IsCarrying()
         {
-            if (_net == null) return null;
+            if (_net == null) return false;
 
-            // Your own carry component knows about everything you have hold of, heavy objects
-            // included. Everybody else's has to come off the wire.
-            if (_isOwner) return _carry != null ? _carry.Carried : null;
+            if (_net.IsOwner)
+            {
+                if (_carry != null && _carry.IsCarrying) return true;
+                if (_hands != null && _hands.Pressing != null) return true;
+                return false;
+            }
 
-            // And the wire only carries tools. Who is hauling a Heavy object lives in a plain
-            // server-side List<Haul> on the Grabbable and is never replicated, so a remote intern
-            // pushing a gurney still reads as having empty hands. Same gap as wounds, and worth
-            // closing at the same time: both are cases of somebody visibly busy that nobody else
-            // can see.
-            return Grabbable.HeldByClient(_net.OwnerClientId);
+            return Grabbable.HeldByClient(_net.OwnerClientId) != null;
         }
-
-        /// <summary>
-        /// Whether this intern has a hand on a wound.
-        ///
-        /// Owner-only, and it should not be - this is the purest case of somebody occupied and
-        /// making no progress, which is exactly what the rest of the room needs to see. Wounds
-        /// are not networked, so a remote client has nothing to read: neither the wound nor the
-        /// hand on it exists on their machine.
-        /// </summary>
-        private bool PressingSomething() => _isOwner && _hands != null && _hands.Pressing != null;
     }
 }

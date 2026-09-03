@@ -19,7 +19,9 @@ GameObject:
   - component: {fileID: 1393000341397134600}
   - component: {fileID: 2428896700341752316}
   - component: {fileID: 1501128035984333028}
-  - component: {fileID: 7394562280233702019}
+  - component: {fileID: 7744389300124578970}
+  - component: {fileID: 6552708422699052709}
+  - component: {fileID: 2069853765526902817}
   m_Layer: 8
   m_Name: Player
   m_TagString: Untagged
@@ -159,6 +161,10 @@ MonoBehaviour:
   springMuteAfterJump: 0.2
   fallGravityMultiplier: 1.8
   maxSlopeAngle: 50
+  sprintSeconds: 6
+  recoverSeconds: 5
+  recoverDelay: 0.7
+  encumberedDrain: 2.6
   encumberedSpeedMultiplier: 0.45
   encumberedAccelMultiplier: 0.35
 --- !u!114 &8255573022719012183
@@ -225,6 +231,8 @@ MonoBehaviour:
   locomotion: {fileID: 8798341418587533612}
   interactor: {fileID: 8255573022719012183}
   carry: {fileID: 1501128035984333028}
+  brace: {fileID: 7744389300124578970}
+  hands: {fileID: 6552708422699052709}
   cursorLock: {fileID: 3835959970621980300}
   playerCamera: {fileID: 494652697979361610}
   audioListener: {fileID: 5507464005352466366}
@@ -294,12 +302,14 @@ MonoBehaviour:
   interactor: {fileID: 8255573022719012183}
   locomotion: {fileID: 8798341418587533612}
   handAnchor: {fileID: 7333480009751986023}
-  holdSpring: 300
-  holdDamper: 30
-  holdTorque: 25
+  maxCarrySpeed: 26
+  massDrag: 0.5
+  maxCarrySpin: 32
+  throwBoost: 1.15
   dropDistance: 2
   grabTimeout: 1
---- !u!114 &7394562280233702019
+  holdToCarrySeconds: 0.25
+--- !u!114 &7744389300124578970
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -308,10 +318,59 @@ MonoBehaviour:
   m_GameObject: {fileID: 1307607299905521931}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5ae3726896cce064e8ff1d88c0bc857a, type: 3}
+  m_Script: {fileID: 11500000, guid: 3afe6ca612c738945be522001cc4ce82, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerRole
-  ShowTopMostFoldoutHeaderGroup: 1
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerBrace
+  input: {fileID: 8084586716203328940}
+  interactor: {fileID: 8255573022719012183}
+  carry: {fileID: 1501128035984333028}
+  look: {fileID: 646668390237806299}
+  locomotion: {fileID: 8798341418587533612}
+  view: {fileID: 494652697979361610}
+  braceReach: 1.6
+  workMask:
+    serializedVersion: 2
+    m_Bits: 4294967039
+  braceSensitivity: 0.0012
+  gamepadBraceSpeed: 0.35
+  cursorExtent: {x: 0.2, y: 0.2}
+  handStandoff: 0.01
+  explainFailures: 1
+  leanSeconds: 0.25
+  bracedFov: 50
+  leanOffset: {x: 0, y: -0.05, z: 0.15}
+--- !u!114 &6552708422699052709
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1307607299905521931}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 92f82ef33894dd84d8c9cf195536b9d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerHands
+  input: {fileID: 8084586716203328940}
+  interactor: {fileID: 8255573022719012183}
+  carry: {fileID: 1501128035984333028}
+  reach: 1.6
+  aimTolerance: 0.22
+--- !u!114 &2069853765526902817
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1307607299905521931}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 12b2510f68904d3fa507e6748033233b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerBody
+  restHand: {x: 0.34, y: -0.5, z: 0.12}
+  busyHand: {x: 0.14, y: -0.28, z: 0.52}
+  handEase: 12
 --- !u!1 &2889585250866751481
 GameObject:
   m_ObjectHideFlags: 0
@@ -337,7 +396,7 @@ Transform:
   m_GameObject: {fileID: 2889585250866751481}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.25, y: -0.2, z: 0.45}
+  m_LocalPosition: {x: 0.08, y: -0.22, z: 0.44}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

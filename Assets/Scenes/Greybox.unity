@@ -1835,6 +1835,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &303212259
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1852,6 +1854,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &328862897
 GameObject:
   m_ObjectHideFlags: 0
@@ -2516,6 +2519,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &371742967
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2533,6 +2538,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &389777933
 GameObject:
   m_ObjectHideFlags: 0
@@ -4510,6 +4516,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &623687264
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4527,6 +4535,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &623861291
 GameObject:
   m_ObjectHideFlags: 0
@@ -6407,6 +6416,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &859201456
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6424,6 +6435,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &861694694
 GameObject:
   m_ObjectHideFlags: 0
@@ -8757,6 +8769,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &1136742281
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8774,6 +8788,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &1174907322
 GameObject:
   m_ObjectHideFlags: 0
@@ -8966,6 +8981,8 @@ MonoBehaviour:
   codeGapMin: 70
   codeGapMax: 120
   codeBleedRate: 0.05
+  crashThreshold: 0.35
+  crashHarmPerSecond: 0.09
 --- !u!114 &1210417948
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10200,6 +10217,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &1352447593
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10217,6 +10236,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &1383747380
 GameObject:
   m_ObjectHideFlags: 0
@@ -11444,6 +11464,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &1448176246
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11461,6 +11483,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &1463807495
 GameObject:
   m_ObjectHideFlags: 0
@@ -12233,6 +12256,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Surgery.Operation
   ShowTopMostFoldoutHeaderGroup: 1
   wrongToolCooldown: 1.25
+  fragilityPerAwakeStep: 0.12
+  fragilityFromResidualHarm: 0.5
 --- !u!114 &1543734510
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -12250,6 +12275,7 @@ MonoBehaviour:
   startingHarm: 0
   safeImpactSpeed: 3.5
   harmPerImpactSpeed: 0.04
+  fragilityImpactPenalty: 0.6
 --- !u!1 &1544588511
 GameObject:
   m_ObjectHideFlags: 0

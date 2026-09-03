@@ -106,7 +106,11 @@ namespace Probation.EditorTools
 
             var hand = new GameObject("HandAnchor") { layer = playerLayer };
             hand.transform.SetParent(pivot.transform, false);
-            hand.transform.localPosition = new Vector3(0.25f, -0.20f, 0.45f);
+
+            // Held low and near the centre line, so a carried tool sits between both hands rather
+            // than out past the outside of the right one. Far enough below the crosshair
+            // (27 degrees) that it never covers what you are aiming at.
+            hand.transform.localPosition = new Vector3(0.08f, -0.22f, 0.44f);
 
             var cursorLock = root.AddComponent<CursorLock>();
             var reader = root.AddComponent<PlayerInputReader>();
