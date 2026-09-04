@@ -1789,6 +1789,7 @@ namespace Probation.EditorTools
             BuildWestBlock(t);
             BuildSpine(t);
             BuildEastRooms(t);
+            BuildCorridors(t);
             BuildShipProps(t);
 
             var intake = Object.FindFirstObjectByType<PatientIntake>();
@@ -1813,9 +1814,15 @@ namespace Probation.EditorTools
             // corridor's full 3.5 m - it is a corridor, not a doorway, and the one opening meant
             // to be a bottleneck is at the dock.
             WallZ(t, "Hull W", west, -10f, 9f);
-            WallZ(t, "Hull E (surgery)", east, -10f, -1.75f);
-            WallZ(t, "Hull E (dock)", east, 1.75f, 9f);
             WallX(t, "Hull S", -10f, west, east);
+
+            // Broken twice, for the two corridors that make this a ring instead of a tree.
+            // Without them every room but Waiting and the Spine is a dead end, and anything
+            // that chases you only has to stand in one doorway.
+            WallZ(t, "Hull E (surgery)", east, -10f, -7.75f);
+            WallZ(t, "Hull E (surgery)", east, -4.5f, -1.75f);   // gap: south corridor
+            WallZ(t, "Hull E (dock)", east, 1.75f, 4.5f);
+            WallZ(t, "Hull E (dock)", east, 7.75f, 9f);          // gap: north corridor
 
             // Open to space, so a lip rather than a wall: you see the stars over it and you do not
             // walk off the ship. Anything over 0.25 m blocks a step, so 1.2 is plenty.
@@ -1874,7 +1881,7 @@ namespace Probation.EditorTools
             // Cleaning / locker. The steriliser and the spare instruments live here, at the far
             // end of the ship from surgery - so the long trip east is the price of a mistake
             // rather than a tax on every patient.
-            WallZ(t, "Cleaning W", 2f, 1.75f, 7.75f);
+            WallZ(t, "Cleaning W", 2f, 1.75f, 4.5f);             // gap above: north corridor
             WallX(t, "Cleaning N", 7.75f, 2f, 9f);
             WallZ(t, "Cleaning E", 9.5f, 1.75f, 7.75f);
             Slab(t, "CLEANING", new Vector3(5.5f, 0.02f, 4.75f), new Vector3(7f, 0.02f, 6f), solid: false);
@@ -1886,13 +1893,46 @@ namespace Probation.EditorTools
             Slab(t, "BRIDGE", new Vector3(12f, 0.02f, 4.75f), new Vector3(4f, 0.02f, 6f), solid: false);
 
             // Airlock. Where the bodies go, and later the parasites.
-            WallZ(t, "Airlock W", 8.5f, -7.75f, -1.75f);
+            WallZ(t, "Airlock W", 8.5f, -4.5f, -1.75f);          // gap below: south corridor
             WallX(t, "Airlock S", -7.75f, 8.5f, 14f);
             WallZ(t, "Airlock E", 14f, -7.75f, -1.75f);
             Slab(t, "AIRLOCK", new Vector3(11.25f, 0.02f, -4.75f), new Vector3(5.5f, 0.02f, 6f), solid: false);
 
             Zone(t, "Morgue", new Vector3(11.25f, 1.5f, -4.75f), new Vector3(5f, 4f, 5.5f),
                  WardZoneKind.Morgue);
+        }
+
+        /// <summary>
+        /// The two corridors that make the ship a ring instead of a tree.
+        ///
+        /// As first built, five of the seven rooms were dead ends and there was exactly one route
+        /// between any two places. That is fine for pushing trolleys - it forces the traffic
+        /// collisions the dock is built around - and useless the moment anything chases you.
+        /// Stand in the one doorway of Surgery and there is no play left: the people inside are
+        /// not outmanoeuvred, they are just finished.
+        ///
+        /// These two make a figure-eight, two loops sharing the Waiting-to-Spine segment. You can
+        /// always run somewhere, two people can split and rejoin, and the Spine becomes a shortcut
+        /// across the middle rather than the only way through it.
+        ///
+        /// The Bridge is left as the one deliberate dead end. A single room you have to commit to
+        /// entering is worth having; five of them is a corridor shooter with no corridors.
+        /// </summary>
+        private static void BuildCorridors(Transform t)
+        {
+            // South: Surgery to the Airlock, along the hull. This also fills the strip of floor
+            // the first layout walled off and wasted.
+            WallX(t, "South corridor N", -4.5f, -4f, 8.5f);
+            WallX(t, "South corridor S", -7.75f, -4f, 8.5f);
+            Slab(t, "SOUTH CORRIDOR", new Vector3(2.25f, 0.02f, -6.125f),
+                 new Vector3(12.5f, 0.02f, 3.25f), solid: false);
+
+            // North: the Dock to Cleaning. The Dock is where you spend most of a night, and it
+            // was the worst dead end on the ship.
+            WallX(t, "North corridor N", 7.75f, -4f, 2f);
+            WallX(t, "North corridor S", 4.5f, -4f, 2f);
+            Slab(t, "NORTH CORRIDOR", new Vector3(-1f, 0.02f, 6.125f),
+                 new Vector3(6f, 0.02f, 3.25f), solid: false);
         }
 
         /// <summary>
@@ -1931,7 +1971,7 @@ namespace Probation.EditorTools
             if (monitor != null) monitor.transform.SetParent(t, true);
 
             // Cleaning: the steriliser, and the spares you come here for.
-            BuildSteriliser(t, new Vector3(3.2f, 0.7f, 4.75f));
+            BuildSteriliser(t, new Vector3(3.2f, 0.7f, 3f));
             InstrumentTray(t, new Vector3(3.5f, 0.55f, 6.8f));
 
             Slab(t, "Supply bench", new Vector3(7f, 0.45f, 6.9f), new Vector3(3.4f, 0.9f, 0.6f), solid: true);
