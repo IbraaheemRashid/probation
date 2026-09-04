@@ -1670,6 +1670,287 @@ namespace Probation.EditorTools
                       "Probation > Verify and Repair Scene, which will tell you what is still missing.");
         }
 
+        // ------------------------------------------------------------------ 10
+
+        // The ward is 42 x 34 m with intake at one end and theatres at the other - a 19.5 m haul
+        // that takes nearly nine seconds pushing a trolley, which is most of why a night is mostly
+        // walking. The ship is 30 x 20 and every trip is under five seconds, because an operation
+        // now takes about twenty and the map should not dwarf it.
+        private const float WallHeight = 5f;
+        private const float WallThick = 0.4f;
+
+        /// <summary>
+        /// A hangar lip: you see the stars over it, you cannot get onto it.
+        ///
+        /// 1.8 tall spans -0.5 to 1.3, so the top is 1.3 m above the floor. A standing eye is at
+        /// 1.60 and clears it; a jump lifts the capsule bottom from 0.25 to 1.10, which does not.
+        /// At 1.2 the top would be 0.70 and anybody could hop it and walk off the ship.
+        /// </summary>
+        private const float ParapetHeight = 1.8f;
+
+        /// <summary>
+        /// A run of wall along X. Doorways are gaps between runs - this project has no door
+        /// component and every opening in the ward is the same trick.
+        /// </summary>
+        private static void WallX(Transform parent, string name, float z, float xFrom, float xTo,
+                                  float height = WallHeight)
+        {
+            float length = xTo - xFrom;
+            if (length <= 0.01f) return;
+
+            // Walls sit ON the floor: the ward's are 5 tall centred at y 2, spanning -0.5 to 4.5.
+            Slab(parent, name, new Vector3((xFrom + xTo) * 0.5f, height * 0.5f - 0.5f, z),
+                 new Vector3(length, height, WallThick), solid: true);
+        }
+
+        private static void WallZ(Transform parent, string name, float x, float zFrom, float zTo,
+                                  float height = WallHeight)
+        {
+            float length = zTo - zFrom;
+            if (length <= 0.01f) return;
+
+            Slab(parent, name, new Vector3(x, height * 0.5f - 0.5f, (zFrom + zTo) * 0.5f),
+                 new Vector3(WallThick, height, length), solid: true);
+        }
+
+        /// <summary>
+        /// One operating position inside the surgery room.
+        ///
+        /// Not <see cref="Bay"/>, which builds a 6.5 m sealed theatre - three of those need 21 m
+        /// and this whole ship is 30. Three berths in one room also reads better on a small ship,
+        /// and it is what the sketch shows: a single room marked "Surgery?".
+        /// </summary>
+        private static void Berth(Transform parent, int number, Vector3 centre, Vector2 size)
+        {
+            Slab(parent, $"BERTH {number}", new Vector3(centre.x, 0.02f, centre.z),
+                 new Vector3(size.x, 0.02f, size.y), solid: false);
+
+            // Y spans -0.15 to 3.35, matching the ward: OperatingBay.Holding tests the patient's
+            // pivot against this AABB, and a patient on a gurney surface sits at about y 1.15.
+            var volume = Box($"Bay {number}", new Vector3(centre.x, 1.6f, centre.z),
+                             new Vector3(size.x, 3.5f, size.y));
+            volume.transform.SetParent(parent, true);
+            volume.GetComponent<BoxCollider>().isTrigger = true;
+            Object.DestroyImmediate(volume.GetComponent<MeshRenderer>());
+
+            var bay = volume.AddComponent<OperatingBay>();
+            var so = new SerializedObject(bay);
+            so.FindProperty("bayName").stringValue = $"Berth {number}";
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>Positioned intake, unlike BuildIntakeBay which hardcodes the ward's.</summary>
+        private static void IntakeVolume(Transform parent, Vector3 position, Vector3 size)
+        {
+            var go = Box("Intake bay", position, size);
+            go.transform.SetParent(parent, true);
+            go.GetComponent<BoxCollider>().isTrigger = true;
+            Object.DestroyImmediate(go.GetComponent<MeshRenderer>());
+            go.AddComponent<IntakeBay>();
+        }
+
+        /// <summary>
+        /// The ship from the sketch: landing dock, waiting room, surgery, a spine east to the
+        /// cleaning room, the bridge and the airlock.
+        ///
+        /// The shape of it is one decision repeated: the dock is the only way in or out for
+        /// anybody alive, the airlock is the only way out for anything you would rather was not
+        /// found, and they are at opposite ends. The busy end and the guilty end.
+        ///
+        /// Builds into whatever scene is open - intended for Map.unity from step 9, which already
+        /// has the network stack and Ward Systems. It does not touch either.
+        /// </summary>
+        [MenuItem("Probation/Setup/10 - Build The Ship", priority = 9)]
+        public static void BuildTheShip()
+        {
+            if (Object.FindFirstObjectByType<NetworkManager>() == null)
+            {
+                Debug.LogError("No NetworkManager in the scene. Run step 9 to make a map scene first.");
+                return;
+            }
+
+            var old = GameObject.Find("Ship");
+            if (old != null) Object.DestroyImmediate(old);
+
+            // Patients are moved and reparented at runtime, so they are cleaned up by type rather
+            // than by parentage - the same reason BuildTheWard does it. Note this destroys the
+            // ward's patients too if the ward scene happens to be the one open.
+            foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
+                Object.DestroyImmediate(patient.gameObject);
+
+            var ship = new GameObject("Ship");
+            var t = ship.transform;
+
+            // Origin is the player spawn - NetworkManager spawns the prefab at its own transform
+            // and Player.prefab sits at (0, 0, 0). Origin falls in the spine corridor, and nothing
+            // solid may be put there.
+            Slab(t, "Ship floor", new Vector3(0f, -0.5f, 0f), new Vector3(31f, 1f, 22f), solid: true);
+
+            BuildWestBlock(t);
+            BuildSpine(t);
+            BuildEastRooms(t);
+            BuildShipProps(t);
+
+            var intake = Object.FindFirstObjectByType<PatientIntake>();
+            if (intake == null)
+                Debug.LogWarning("[Probation] No PatientIntake - run Verify and Repair Scene.");
+
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            AssetDatabase.SaveAssets();
+
+            Debug.Log("[Probation] Ship built: landing dock, waiting room, surgery with 3 berths, " +
+                      "spine, cleaning room, bridge, airlock. 6 gurneys, 8 patients.\n" +
+                      "Do NOT run step 6 on this scene - it places instruments at the ward's " +
+                      "coordinates. The ship builds its own.");
+        }
+
+        /// <summary>Dock, waiting room and surgery, stacked north to south down the west side.</summary>
+        private static void BuildWestBlock(Transform t)
+        {
+            const float west = -14f, east = -4f;
+
+            // Outer hull. The east wall is broken by the spine mouth, which is left at the
+            // corridor's full 3.5 m - it is a corridor, not a doorway, and the one opening meant
+            // to be a bottleneck is at the dock.
+            WallZ(t, "Hull W", west, -10f, 9f);
+            WallZ(t, "Hull E (surgery)", east, -10f, -1.75f);
+            WallZ(t, "Hull E (dock)", east, 1.75f, 9f);
+            WallX(t, "Hull S", -10f, west, east);
+
+            // Open to space, so a lip rather than a wall: you see the stars over it and you do not
+            // walk off the ship. Anything over 0.25 m blocks a step, so 1.2 is plenty.
+            WallX(t, "Dock lip", 9f, west, east, ParapetHeight);
+
+            // Dock / waiting. A 2 m gap takes one trolley plus somebody squeezing past, and will
+            // NOT take two - which is the whole bet on the dock doing arrivals and departures.
+            WallX(t, "Dock wall", 2.5f, west, -10f);
+            WallX(t, "Dock wall", 2.5f, -8f, east);
+
+            WallX(t, "Surgery wall", -3.5f, west, -10f);
+            WallX(t, "Surgery wall", -3.5f, -8f, east);
+
+            Slab(t, "LANDING DOCK", new Vector3(-9f, 0.02f, 5.75f), new Vector3(10f, 0.02f, 6.5f), solid: false);
+            Slab(t, "WAITING ROOM", new Vector3(-9f, 0.02f, -0.5f), new Vector3(10f, 0.02f, 6f), solid: false);
+
+            // Intake west, discharge east, deliberately NOT overlapping. Gurney.Load teleports a
+            // patient onto a trolley and teleporting into a trigger fires OnTriggerEnter - an
+            // overlapping discharge zone would test every new arrival and announce "nobody has
+            // charted that one" at them. Same room, same doorway, separate volumes.
+            IntakeVolume(t, new Vector3(-11.5f, 1.5f, 5.75f), new Vector3(5f, 4f, 5.5f));
+            Zone(t, "Discharge", new Vector3(-6.25f, 1.5f, 5.75f), new Vector3(4.5f, 4f, 5.5f),
+                 WardZoneKind.Discharge);
+
+            Slab(t, "INTAKE", new Vector3(-11.5f, 0.02f, 5.75f), new Vector3(5f, 0.02f, 5.5f), solid: false);
+            Slab(t, "DISCHARGE", new Vector3(-6.25f, 0.02f, 5.75f), new Vector3(4.5f, 0.02f, 5.5f), solid: false);
+
+            Slab(t, "SURGERY", new Vector3(-9f, 0.02f, -6.75f), new Vector3(10f, 0.02f, 6.5f), solid: false);
+
+            // Berths sit in the middle of the room: 1.2 m of circulation north of them to the
+            // doorway, and the bench along the south wall behind them.
+            for (int i = 0; i < 3; i++)
+                Berth(t, i + 1, new Vector3(-11.5f + i * 2.5f, 0f, -6.5f), new Vector2(2.4f, 3.6f));
+        }
+
+        /// <summary>The only route east. Everybody meets here.</summary>
+        private static void BuildSpine(Transform t)
+        {
+            const float north = 1.75f, south = -1.75f;
+
+            WallX(t, "Spine wall N", north, -4f, 4.5f);
+            WallX(t, "Spine wall N", north, 6.5f, 11f);      // gap: cleaning
+            WallX(t, "Spine wall N", north, 13f, 14f);       // gap: bridge
+
+            WallX(t, "Spine wall S", south, -4f, 10f);
+            WallX(t, "Spine wall S", south, 12f, 14f);       // gap: airlock
+
+            WallZ(t, "Hull E", 14f, south, north);
+
+            Slab(t, "SPINE", new Vector3(5f, 0.02f, 0f), new Vector3(18f, 0.02f, 3.5f), solid: false);
+        }
+
+        /// <summary>Cleaning, bridge and airlock, all hanging off the spine.</summary>
+        private static void BuildEastRooms(Transform t)
+        {
+            // Cleaning / locker. The steriliser and the spare instruments live here, at the far
+            // end of the ship from surgery - so the long trip east is the price of a mistake
+            // rather than a tax on every patient.
+            WallZ(t, "Cleaning W", 2f, 1.75f, 7.75f);
+            WallX(t, "Cleaning N", 7.75f, 2f, 9f);
+            WallZ(t, "Cleaning E", 9.5f, 1.75f, 7.75f);
+            Slab(t, "CLEANING", new Vector3(5.5f, 0.02f, 4.75f), new Vector3(7f, 0.02f, 6f), solid: false);
+
+            // Bridge. Empty, and a window rather than a wall on its north face - the only other
+            // place on the ship you look up and see anything.
+            WallX(t, "Bridge window", 7.75f, 10f, 14f, ParapetHeight);
+            WallZ(t, "Bridge E", 14f, 1.75f, 7.75f);
+            Slab(t, "BRIDGE", new Vector3(12f, 0.02f, 4.75f), new Vector3(4f, 0.02f, 6f), solid: false);
+
+            // Airlock. Where the bodies go, and later the parasites.
+            WallZ(t, "Airlock W", 8.5f, -7.75f, -1.75f);
+            WallX(t, "Airlock S", -7.75f, 8.5f, 14f);
+            WallZ(t, "Airlock E", 14f, -7.75f, -1.75f);
+            Slab(t, "AIRLOCK", new Vector3(11.25f, 0.02f, -4.75f), new Vector3(5.5f, 0.02f, 6f), solid: false);
+
+            Zone(t, "Morgue", new Vector3(11.25f, 1.5f, -4.75f), new Vector3(5f, 4f, 5.5f),
+                 WardZoneKind.Morgue);
+        }
+
+        /// <summary>
+        /// Trolleys, instruments, and the eight pooled patients.
+        ///
+        /// Instruments are split on purpose. A working set sits in surgery so routine work is
+        /// local; the steriliser and the spares are in cleaning, so a dirty instrument costs you
+        /// the length of the ship.
+        /// </summary>
+        private static void BuildShipProps(Transform t)
+        {
+            // Three parked in intake ready to receive, three in the waiting room. IsInIntake
+            // tests the trolley's PIVOT, so these sit well inside the volume rather than on its lip.
+            Trolley(t, 1, new Vector3(-12.8f, 0.5f, 5.5f));
+            Trolley(t, 2, new Vector3(-11.4f, 0.5f, 5.5f));
+            Trolley(t, 3, new Vector3(-10f, 0.5f, 5.5f));
+
+            Trolley(t, 4, new Vector3(-12.5f, 0.5f, -1f));
+            Trolley(t, 5, new Vector3(-10f, 0.5f, -1f));
+            Trolley(t, 6, new Vector3(-7.5f, 0.5f, -1f));
+
+            // Surgery bench: one full extraction's worth, along the north wall behind the berths.
+            // Along the SOUTH wall, behind the berths. It was across the north wall, which put it
+            // directly in front of the only door into surgery.
+            Slab(t, "Surgery bench", new Vector3(-9f, 0.45f, -9.4f), new Vector3(6.5f, 0.9f, 0.6f), solid: true);
+            Tool("Gas rig",    new Vector3(-11.7f, 1.0f, -9.4f), new Vector3(0.16f, 0.10f, 0.16f), 2.0f, 0.15f);
+            Tool("Scalpel",    new Vector3(-10.9f, 1.0f, -9.4f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+            Tool("Retractor",  new Vector3(-10.1f, 1.0f, -9.4f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
+            Tool("Retractor",  new Vector3(-9.3f, 1.0f, -9.4f), new Vector3(0.18f, 0.04f, 0.22f), 1.2f, 0.12f);
+            Tool("Forceps",    new Vector3(-8.5f, 1.0f, -9.4f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+            Tool("Suture kit", new Vector3(-7.7f, 1.0f, -9.4f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
+            Tool("Swab",       new Vector3(-6.9f, 1.0f, -9.4f), new Vector3(0.06f, 0.04f, 0.14f), 0.15f, 0.04f);
+
+            BuildMonitor(new Vector3(-4.8f, 0.55f, -5.5f));
+            var monitor = GameObject.Find("Vitals monitor");
+            if (monitor != null) monitor.transform.SetParent(t, true);
+
+            // Cleaning: the steriliser, and the spares you come here for.
+            BuildSteriliser(t, new Vector3(3.2f, 0.7f, 4.75f));
+            InstrumentTray(t, new Vector3(3.5f, 0.55f, 6.8f));
+
+            Slab(t, "Supply bench", new Vector3(7f, 0.45f, 6.9f), new Vector3(3.4f, 0.9f, 0.6f), solid: true);
+            Tool("Scanner",    new Vector3(5.7f, 1.0f, 6.9f), new Vector3(0.10f, 0.04f, 0.20f), 0.5f, 0.06f);
+            Tool("Scalpel",    new Vector3(6.3f, 1.0f, 6.9f), new Vector3(0.04f, 0.03f, 0.28f), 0.3f, 0.05f);
+            Tool("Forceps",    new Vector3(6.9f, 1.0f, 6.9f), new Vector3(0.04f, 0.03f, 0.22f), 0.4f, 0.05f);
+            Tool("Suture kit", new Vector3(7.5f, 1.0f, 6.9f), new Vector3(0.12f, 0.05f, 0.16f), 0.6f, 0.08f);
+            Tool("Swab",       new Vector3(8.1f, 1.0f, 6.9f), new Vector3(0.06f, 0.04f, 0.14f), 0.15f, 0.04f);
+
+            // Tool() returns unparented, so sweep them into the Ship root.
+            foreach (var tool in Object.FindObjectsByType<ToolTip>(FindObjectsSortMode.None))
+            {
+                var root = tool.transform.parent;
+                if (root != null && root.parent == null) root.SetParent(t, true);
+            }
+
+            for (int i = 0; i < 8; i++) BuildPatient(t, $"Patient {i + 1}");
+        }
+
         [MenuItem("Probation/Verify and Repair Scene", priority = 20)]
         public static void VerifyScene()
         {
