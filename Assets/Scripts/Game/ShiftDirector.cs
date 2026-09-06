@@ -175,6 +175,11 @@ namespace Probation.Game
 
                 IncidentLog.Record(parasite.Blame, "left one of them loose on the ship");
                 _deaths.Value++;
+
+                // Found, and dealt with by somebody who is not you. You have already paid for it
+                // on the body count, and a night that opens with last night's mess still walking
+                // around would be punishing the same mistake twice.
+                parasite.Incinerate();
             }
         }
 

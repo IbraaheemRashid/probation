@@ -255,6 +255,11 @@ namespace Probation.Surgery
 
         private void Park()
         {
+            // Out of whoever's hands it is in first. You can walk into the airlock still holding
+            // one, and a pooled parasite that PlayerCarry still thinks it is carrying gets dragged
+            // back up out of the floor, or dropped the moment it exceeds the carry distance.
+            if (_grabbable != null && _grabbable.IsHeld) _grabbable.ForceRelease(_grabbable.HeldBy);
+
             _state.Value = (int)ParasiteState.Pooled;
             _heading = null;
 
@@ -371,7 +376,26 @@ namespace Probation.Surgery
         /// attractive thing on the ship - somebody who has suspended their own view to work is
         /// exactly who this should be creeping up on.
         /// </summary>
+        /// <summary>
+        /// What it goes for, recomputed a few times a second rather than every frame.
+        ///
+        /// Finding the players means a scene-wide search, and four parasites doing that at sixty
+        /// frames a second is two hundred and forty of them. Nothing here moves fast enough for
+        /// the difference to be visible.
+        /// </summary>
         private Transform Quarry()
+        {
+            if (Time.time < _nextRetarget && _quarry != null) return _quarry;
+            _nextRetarget = Time.time + 0.35f;
+
+            _quarry = PickQuarry();
+            return _quarry;
+        }
+
+        private Transform _quarry;
+        private float _nextRetarget;
+
+        private Transform PickQuarry()
         {
             Transform best = null;
             float bestScore = float.PositiveInfinity;
