@@ -36,6 +36,18 @@ namespace Probation.Game
             var net = NetworkManager.Singleton;
             if (net == null || !net.IsServer) return;
 
+            // The airlock is the only way anything gets off this ship, and that includes the
+            // things that were never patients. Same door, same gesture, no new mechanic.
+            var parasite = other.GetComponentInParent<Parasite>();
+            if (parasite != null)
+            {
+                if (kind != WardZoneKind.Morgue) return;
+
+                IncidentLog.Record(parasite.Blame, "put one out of the airlock");
+                parasite.Incinerate();
+                return;
+            }
+
             var patient = other.GetComponentInParent<Patient>();
             if (patient == null || patient.HasLeft) return;
 

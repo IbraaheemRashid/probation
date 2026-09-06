@@ -149,6 +149,32 @@ namespace Probation.Interaction
             return null;
         }
 
+        /// <summary>
+        /// A particular instrument, in somebody's hands, near a point.
+        ///
+        /// Held is the whole point: an instrument lying on a bench does nothing to anything. This
+        /// is how a gas rig sedates a parasite without the parasite knowing what a gas rig is.
+        /// </summary>
+        public static Grabbable HeldNear(Vector3 point, float range, string toolId)
+        {
+            float best = range * range;
+            Grabbable found = null;
+
+            foreach (var grabbable in All)
+            {
+                if (grabbable == null || !grabbable.IsHeld) continue;
+                if (grabbable.ToolId != toolId) continue;
+
+                float d = (grabbable.transform.position - point).sqrMagnitude;
+                if (d > best) continue;
+
+                best = d;
+                found = grabbable;
+            }
+
+            return found;
+        }
+
         public override void OnNetworkSpawn()
         {
             All.Add(this);

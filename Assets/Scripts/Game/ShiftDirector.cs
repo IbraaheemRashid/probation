@@ -148,6 +148,27 @@ namespace Probation.Game
             if (IsServer) _deaths.Value++;
         }
 
+        /// <summary>
+        /// The last thing that happens before the supervisor arrives.
+        ///
+        /// Anything still on the ship at this point is a thing that gets found, and it goes in the
+        /// review under the name of whoever it belonged to. This is what cover-up is for - the
+        /// phase is twenty seconds to move what should not be found, and until now nothing
+        /// actually checked whether you had.
+        /// </summary>
+        private void SweepForWhatWasLeftLoose()
+        {
+            if (!IsServer) return;
+
+            foreach (var parasite in Probation.Surgery.Parasite.All)
+            {
+                if (parasite == null || parasite.State == Probation.Surgery.ParasiteState.Pooled) continue;
+
+                IncidentLog.Record(parasite.Blame, "left one of them loose on the ship");
+                _deaths.Value++;
+            }
+        }
+
         public void RecordDischarge()
         {
             if (!IsServer) return;
@@ -204,6 +225,7 @@ namespace Probation.Game
                     break;
 
                 case ShiftPhase.CoverUp:
+                    SweepForWhatWasLeftLoose();
                     Enter(ShiftPhase.Review);
                     PublishReviewRpc(string.Join("\n", BuildReview()));
                     break;

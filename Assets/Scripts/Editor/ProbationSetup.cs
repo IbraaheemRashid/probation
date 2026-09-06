@@ -999,6 +999,11 @@ namespace Probation.EditorTools
             brood.presentingSickness = 0.22f;
             brood.arrivesHarmed = 0.1f;
             brood.untreatedHarmPerSecond = 0.005f;
+
+            // The clock a brood puts on the whole ward. Triage everybody else first and it stops
+            // waiting - and then it is not a patient any more, it is loose.
+            brood.carriesParasite = true;
+            brood.parasiteEscapesAfter = 55f;
             brood.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
                 new() { species = null, treatment = broodExtraction, reliefIfCorrect = 0.35f,
@@ -1989,6 +1994,89 @@ namespace Probation.EditorTools
             }
 
             for (int i = 0; i < 8; i++) BuildPatient(t, $"Patient {i + 1}");
+
+            // Four is plenty. Nothing spawns these - every one that ends up on the ship got there
+            // because somebody left a brood in a patient too long, or a brood patient died, or
+            // somebody pulled one out and put it down. If all four are loose at once, the night
+            // has gone extremely badly and running out is the least of anybody's problems.
+            for (int i = 0; i < 4; i++) BuildParasite(t, i + 1);
+
+            BuildShipNodes(t);
+        }
+
+        /// <summary>
+        /// One pooled parasite, parked under the map until it is somebody's fault.
+        /// </summary>
+        private static void BuildParasite(Transform parent, int number)
+        {
+            var go = Box($"Parasite {number}", new Vector3(0f, -40f, 0f), new Vector3(0.34f, 0.22f, 0.52f));
+            go.transform.SetParent(parent, true);
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 6f;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            go.AddComponent<NetworkObject>();
+
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = "specimen";
+
+            // The empty toolId is load-bearing. Operation treats ANY held grabbable with a
+            // non-empty toolId inside a step's tolerance as the wrong instrument and hurts the
+            // patient for it - so carrying one of these past an open body would injure them.
+            so.FindProperty("toolId").stringValue = "";
+            so.FindProperty("kind").enumValueIndex = (int)GrabKind.Tool;
+            so.FindProperty("encumbrance").floatValue = 0.25f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ConfigureTransform(go.AddComponent<NetworkTransform>(),
+                               localSpace: false, syncScale: false, ownerAuthority: true);
+
+            go.AddComponent<Parasite>();
+        }
+
+        /// <summary>
+        /// The graph anything that hunts walks along: room centres and doorways.
+        ///
+        /// No NavMesh, deliberately. The ship is generated from code and re-baking a mesh every
+        /// time a wall moves is a worse problem than the one it solves. Eighteen nodes describe
+        /// this ship completely, and the links between them are worked out at runtime by line of
+        /// sight - so a map somebody builds by hand works too, as long as they drop nodes in it.
+        /// </summary>
+        private static void BuildShipNodes(Transform parent)
+        {
+            Node(parent, "dock",            new Vector3(-9f, 0f, 5.75f));
+            Node(parent, "dock door",       new Vector3(-9f, 0f, 2.5f));
+            Node(parent, "waiting",         new Vector3(-9f, 0f, -0.5f));
+            Node(parent, "surgery door",    new Vector3(-9f, 0f, -3.5f));
+            Node(parent, "surgery",         new Vector3(-9f, 0f, -6.5f));
+
+            Node(parent, "south corr W",    new Vector3(-4f, 0f, -6.1f));
+            Node(parent, "south corr E",    new Vector3(8f, 0f, -6.1f));
+            Node(parent, "airlock",         new Vector3(11.25f, 0f, -4.75f));
+            Node(parent, "airlock door",    new Vector3(11f, 0f, -1.75f));
+
+            Node(parent, "spine W",         new Vector3(-4f, 0f, 0f));
+            Node(parent, "spine mid",       new Vector3(5.5f, 0f, 0f));
+            Node(parent, "spine E",         new Vector3(12f, 0f, 0f));
+
+            Node(parent, "cleaning door",   new Vector3(5.5f, 0f, 1.75f));
+            Node(parent, "cleaning",        new Vector3(5.5f, 0f, 4.75f));
+            Node(parent, "north corr E",    new Vector3(2f, 0f, 6.1f));
+            Node(parent, "north corr W",    new Vector3(-4f, 0f, 6.1f));
+
+            Node(parent, "bridge door",     new Vector3(12f, 0f, 1.75f));
+            Node(parent, "bridge",          new Vector3(12f, 0f, 4.75f));
+        }
+
+        private static void Node(Transform parent, string name, Vector3 position)
+        {
+            var go = new GameObject($"Node {name}");
+            go.transform.SetParent(parent, true);
+            go.transform.position = position;
+            go.AddComponent<ShipNode>();
         }
 
         [MenuItem("Probation/Verify and Repair Scene", priority = 20)]
