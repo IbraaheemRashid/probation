@@ -51,9 +51,15 @@ namespace Probation.Interaction
         [Range(0f, 1f)] [SerializeField] private float encumbrance = 0.15f;
 
         [Header("Heavy haul (ignored for tools)")]
-        [SerializeField] private float haulSpring = 600f;
-        [SerializeField] private float haulDamper = 40f;
-        [SerializeField] private float maxHaulForce = 2500f;
+        // Tuned against this project's gravity, which is -24 and not -9.81. That makes everything
+        // weigh two and a half times what the numbers look like, and friction with it: a 40 kg
+        // gurney presses down with 960 N and resists about 576 N before it will slide at all. The
+        // old spring produced 300 N at half a metre of stretch, so gurneys, monitors and patients
+        // could not be moved by hauling them - only the instrument tray was light enough.
+        [SerializeField] private float haulSpring = 3000f;
+        [Tooltip("Raised with the spring. Critical damping for a 40 kg gurney at this stiffness is about 690, so this is deliberately springy rather than dead.")]
+        [SerializeField] private float haulDamper = 350f;
+        [SerializeField] private float maxHaulForce = 4000f;
         [Tooltip("Let go automatically once the object is dragged further than this from the hand.")]
         [SerializeField] private float haulBreakDistance = 3f;
 

@@ -24,10 +24,8 @@ namespace Probation.Player
         [Header("Tool hold")]
         [Tooltip("Ceiling on how fast a held tool chases your hand. Lower feels heavier.")]
         [SerializeField] private float maxCarrySpeed = 26f;
-        [Tooltip("How much mass eats into that ceiling. 0 makes every tool equally nimble.")]
-        [SerializeField] private float massDrag = 0.5f;
-        [Tooltip("How hard the hand can accelerate a held tool, before mass. THIS is the weight knob - the speed ceiling never binds at bracing speed. Lower makes heavy instruments trail further behind a fast drag; too low and they fall behind dropDistance.")]
-        [SerializeField] private float carryForce = 8f;
+        [Tooltip("How much mass eats into that ceiling. 0 makes every tool equally nimble. At 2.8 a swab tracks at 18 m/s, a scalpel at 14, a retractor at 6 and a gas rig at 4 - so the heavy ones visibly trail a fast turn and the light ones do not.")]
+        [SerializeField] private float massDrag = 2.8f;
         [SerializeField] private float maxCarrySpin = 32f;
         [Tooltip("Extra push on release, on top of the speed it already had.")]
         [SerializeField] private float throwBoost = 1.15f;
@@ -200,24 +198,22 @@ namespace Probation.Player
             float step = Time.fixedDeltaTime;
             if (step <= 0f || handAnchor == null) return;
 
-            // Was Max(1f, mass * massDrag), and that floor ate the whole mechanic: every tool in
-            // the game masses under 2 kg, so the product never reached 1 and all three testbed
-            // scalpels clamped to exactly maxCarrySpeed. The blade-weight experiment the testbed
-            // was built for could not have shown anything. 1 + mass*massDrag is continuous, still
-            // never exceeds maxCarrySpeed, and bites at surgical masses.
+            // The velocity that arrives exactly this step, clamped by how nimble the tool is.
+            //
+            // There WAS an acceleration limit here, meant to make weight felt at bracing speed,
+            // and it broke both ends of the rack. A gas rig at 2 kg got 4 m/s^2 - eight
+            // centimetres per second of velocity change per step - so it simply did not follow
+            // your hand. And rate-limiting the velocity makes it LAG a target that is recomputed
+            // every step to point at the anchor: the tool overshoots, the target flips, and it
+            // rings. Clamping a velocity cannot oscillate, because it always points at the hand
+            // and only ever arrives late. Rate-limiting one absolutely can.
+            //
+            // So: straight to target, ceiling scaled by mass. A heavy instrument still trails on a
+            // fast turn - that is the ceiling binding - and a light one is glued to your hand.
             float ceiling = maxCarrySpeed / (1f + _carriedBody.mass * massDrag);
 
             Vector3 wanted = (handAnchor.position - _carriedBody.position) / step;
-            Vector3 target = Vector3.ClampMagnitude(wanted, ceiling);
-
-            // The ceiling alone still cannot make weight felt while bracing, and it is worth being
-            // clear why: a braced hand moves at well under 1 m/s, and the ceiling sits one to two
-            // orders of magnitude above that, so it never binds during a cut. Setting velocity
-            // straight to target is perfect tracking - mass is mathematically incapable of
-            // mattering. An acceleration limit divided by mass is what actually produces lag, at
-            // any speed, which is the difference between carrying a scalpel and carrying a saw.
-            float accel = carryForce / Mathf.Max(0.05f, _carriedBody.mass);
-            _carriedBody.linearVelocity = Vector3.MoveTowards(_carriedBody.linearVelocity, target, accel * step);
+            _carriedBody.linearVelocity = Vector3.ClampMagnitude(wanted, ceiling);
 
             Quaternion delta = handAnchor.rotation * Quaternion.Inverse(_carriedBody.rotation);
 

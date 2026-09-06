@@ -2122,6 +2122,7 @@ namespace Probation.EditorTools
 
             added += BuildWardSystems(go);
             problems += VerifyCasebook();
+            added += RetuneHauling();
 
             // Wards built before the intake bay existed have no way to admit anybody, and the
             // symptom is simply that no patients ever appear. Repair it in place rather than
@@ -2417,6 +2418,47 @@ namespace Probation.EditorTools
             Debug.Log($"[Verify] Moved {typeof(T).Name} onto '{WardSystemsName}'. On the " +
                       "NetworkManager it could never spawn, so it never ran at all.");
             return 1;
+        }
+
+        /// <summary>
+        /// Bring already-placed Grabbables up to the current haul tuning.
+        ///
+        /// Serialized fields keep whatever value they had when the component was added, so
+        /// changing a default in code does nothing to a scene that already exists. The old
+        /// numbers were tuned for Earth gravity and this project runs at -24: a 40 kg gurney
+        /// presses down with 960 N and resists about 576 N of friction, while the old spring
+        /// produced 300 N at half a metre of stretch. Gurneys, monitors and patients simply
+        /// could not be hauled.
+        ///
+        /// Only touches values that are still on the old defaults, so anything deliberately
+        /// tuned by hand is left alone.
+        /// </summary>
+        private static int RetuneHauling()
+        {
+            int fixed_ = 0;
+
+            foreach (var grabbable in Object.FindObjectsByType<Grabbable>(FindObjectsSortMode.None))
+            {
+                var so = new SerializedObject(grabbable);
+                var spring = so.FindProperty("haulSpring");
+                var damper = so.FindProperty("haulDamper");
+                var max = so.FindProperty("maxHaulForce");
+                if (spring == null || damper == null || max == null) continue;
+
+                if (!Mathf.Approximately(spring.floatValue, 600f)) continue;
+
+                spring.floatValue = 3000f;
+                damper.floatValue = 350f;
+                max.floatValue = 4000f;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                fixed_++;
+            }
+
+            if (fixed_ > 0)
+                Debug.Log($"[Verify] Retuned hauling on {fixed_} objects. The old spring could not " +
+                          "move anything heavier than an instrument tray against this project's gravity.");
+
+            return fixed_;
         }
 
         private static int Ensure<T>(GameObject go) where T : Component
