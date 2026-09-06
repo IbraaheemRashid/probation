@@ -306,6 +306,7 @@ namespace Probation.Surgery
             // Or the new arrival inherits the last occupant's diagnosis, which is the worst
             // possible version of this bug: the chart reads plausibly and is about someone else.
             _chart?.Clear();
+            _interview?.Clear();
 
             SetState(_bleedRate > 0f ? PatientState.Bleeding : PatientState.Stable);
         }
@@ -386,6 +387,7 @@ namespace Probation.Surgery
         /// <summary>Cached because the untreated-harm tick asks every frame, on every patient.</summary>
         private Operation _operation;
         private PatientChart _chart;
+        private PatientInterview _interview;
 
         /// <summary>The rate bleedOutSeconds is expressed against. A species at 45 bleeds as authored.</summary>
         private const float BaselineBleedOutSeconds = 45f;
@@ -394,6 +396,7 @@ namespace Probation.Surgery
         {
             _operation = GetComponent<Operation>();
             _chart = GetComponentInChildren<PatientChart>(true);
+            _interview = GetComponentInChildren<PatientInterview>(true);
         }
 
         /// <summary>

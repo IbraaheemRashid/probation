@@ -34,6 +34,7 @@ Around that loop, everything goes wrong at once: three patients arrive while you
 | **Papers, Please** | Cross-referencing a document against the thing in front of you |
 | **R.E.P.O.** | Physical objects that punish carelessness; carrying is a skill |
 | **PowerWash Simulator** | Progress is coverage, not a timer |
+| **Shift At Midnight** | Verify each arrival before you serve them - and if you get one wrong, the night turns into something else |
 
 The tone is **friendly horror**: tense, funny, panicked. Nobody dies. Everything is embarrassing.
 
@@ -85,13 +86,25 @@ Three genuinely different shapes, so reading a patient wrong changes what your h
 
 ## 7. Diagnosis
 
-Three channels, three prices. **No channel ever gives the answer.**
+Four channels, four prices. **No channel ever gives the answer.**
 
 | Channel | Costs | Gives |
 |---|---|---|
 | **Presentation** | Free, across the room | The cluster — two or three candidates |
 | **Scanner** | One tool, one pair of hands | *This patient's* signs: species, rate, what a scan can see |
+| **The patient** | Seconds, and they must still be awake | *Testimony* — their account, which can disagree with the scan |
 | **Textbook** | A whole player, standing still, blind | *General* rules: what a body of that species normally contains |
+
+**You get five questions**, and then they have had enough of you. They stop talking the moment you put them under — and every procedure begins by putting them under. So the interview happens before the operation or not at all, while they are frightened and in pain, on a clock.
+
+A patient answers about their condition where they can and falls back on their species where they cannot, and that fallback is the whole trap:
+
+> **"Does it move?"**
+> A Thoracid with a mass in its cavity: *"It beats. It has always beaten."*
+> A Vithrid with the same reading: *"Nothing in me is supposed to move except my heart, and that sits low."*
+> A brood, in either: *"Yes. It turns over when I lie down."*
+
+Nobody is lying. The Thoracid is telling you, truthfully and helpfully, about its own second heart.
 
 The answer exists only in the **join** — and the join happens in somebody's head, out loud, across a ship.
 

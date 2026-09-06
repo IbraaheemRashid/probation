@@ -26,6 +26,10 @@ namespace Probation.Surgery
         [Tooltip("Harmed by metal instruments. The manual does not mention this.")]
         public bool allergicToMetal;
 
+        [Header("What one of these says when asked")]
+        [Tooltip("Fallback for questions their condition has no answer to. This is where a species tells you about its own normal anatomy, truthfully, in a way that will kill it if you do not know what you are listening to.")]
+        [TextArea] public string[] testimony = System.Array.Empty<string>();
+
         // There used to be a diagnosisText here, and the scanner printed it. It named the
         // condition outright - and because it lived on the species, every patient of a species
         // scanned identically no matter what was wrong with them. What a scan reports now lives

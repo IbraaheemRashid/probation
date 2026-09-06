@@ -43,6 +43,22 @@ namespace Probation.Surgery
         [Header("Who comes through the door")]
         public List<CaseWeight> arrivals = new();
 
+        [Header("What you are allowed to ask")]
+        [Tooltip("Asked in this order, one per interaction. Five, and then they have had enough of you.")]
+        public string[] interviewQuestions =
+        {
+            "How long has it been like this?",
+            "Does it move?",
+            "Does it hurt?",
+            "How did this happen?",
+            "Have you been cut open before?",
+        };
+
+        public string QuestionAt(int index) =>
+            interviewQuestions != null && index >= 0 && index < interviewQuestions.Length
+                ? interviewQuestions[index]
+                : "...";
+
         /// <summary>
         /// The casebook this session is running.
         ///

@@ -930,6 +930,19 @@ namespace Probation.EditorTools
             species.bleedOutSeconds = 45f;
             species.wakesToNoise = true;          // volume becomes an input
             species.allergicToMetal = false;
+
+            // The second line is the whole trap, and a Thoracid hands it to you freely and
+            // truthfully. It is describing its own heart. Whether that kills them depends
+            // entirely on whether anybody in the room knows what a Thoracid is.
+            species.testimony = new[]
+            {
+                "Which one? There has always been something in there.",
+                "It beats. It has always beaten.",
+                "No more than usual.",
+                "Nothing happened to me. I woke up like this.",
+                "Never. Nobody has ever needed to.",
+            };
+
             EditorUtility.SetDirty(species);
             return species;
         }
@@ -949,6 +962,18 @@ namespace Probation.EditorTools
             species.bleedOutSeconds = 20f;
             species.wakesToNoise = false;
             species.allergicToMetal = true;
+
+            // The same question, on a species built to invert it. A Vithrid telling you nothing
+            // should be moving up there is telling you to cut.
+            species.testimony = new[]
+            {
+                "Not long. Days.",
+                "Nothing in me is supposed to move except my heart, and that sits low.",
+                "Everything hurts. We are made like that.",
+                "I could not tell you.",
+                "Twice. It is routine, for us.",
+            };
+
             EditorUtility.SetDirty(species);
             return species;
         }
@@ -977,6 +1002,19 @@ namespace Probation.EditorTools
             foreignBody.presentingSickness = 0.18f;
             foreignBody.arrivesHarmed = 0.05f;
             foreignBody.untreatedHarmPerSecond = 0.003f;
+
+            // Note the blank. "Does it move?" is left for the SPECIES to answer, and that is the
+            // entire trap: a Thoracid says it beats and always has, a Vithrid says nothing up
+            // there should be moving at all. Same presentation, same question, opposite answers,
+            // and the patient is being perfectly honest in both cases.
+            foreignBody.testimony = new[]
+            {
+                "A few days. It came on quickly.",
+                "",
+                "Only when I press on it.",
+                "I swallowed something, I think. I am not sure.",
+                "",
+            };
             foreignBody.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
                 // The trap. Nothing about this reads as a trap from across the ward, which is
@@ -1012,6 +1050,15 @@ namespace Probation.EditorTools
             laceration.arrivesBleedingRate = 0.012f;
             laceration.arrivesHarmed = 0.08f;
             laceration.untreatedHarmPerSecond = 0.006f;
+
+            laceration.testimony = new[]
+            {
+                "An hour. Since the dock.",
+                "No. It just bleeds.",
+                "Yes. Badly.",
+                "Something in the cargo bay came loose.",
+                "",
+            };
             laceration.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
                 // No species set: the fallback, and the reason night one is survivable. The same
@@ -1036,6 +1083,18 @@ namespace Probation.EditorTools
             brood.presentingSickness = 0.22f;
             brood.arrivesHarmed = 0.1f;
             brood.untreatedHarmPerSecond = 0.005f;
+
+            // A brood answers the movement question itself, so it never falls through to the
+            // species. That is how you tell a Thoracid's second heart from something else living
+            // in the same cavity: one beats, the other turns over.
+            brood.testimony = new[]
+            {
+                "A week. It has been getting worse.",
+                "Yes. It turns over when I lie down.",
+                "Deep down. Not on the skin.",
+                "I have not been anywhere. It was not there before.",
+                "",
+            };
 
             // The clock a brood puts on the whole ward. Triage everybody else first and it stops
             // waiting - and then it is not a patient any more, it is loose.
@@ -1235,6 +1294,31 @@ namespace Probation.EditorTools
             Site(go.transform, "cavity", new Vector3(0f, 0.2f, 0.45f));
 
             Chart(go.transform);
+            Interview(go.transform);
+        }
+
+        /// <summary>
+        /// Where you stand to talk to somebody: the head end, opposite the chart.
+        ///
+        /// Its own child with a trigger collider, for the same reason the chart is - the patient
+        /// root is a Grabbable, which is already an IInteractable, and PlayerInteractor resolves
+        /// focus with GetComponentInParent. Two on one object and the winner depends on component
+        /// order.
+        ///
+        /// You write the chart at the foot and you ask them questions at the head, which is both
+        /// the right way round and a way of making the two jobs physically different places.
+        /// </summary>
+        private static void Interview(Transform parent)
+        {
+            var go = new GameObject("Interview");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(0f, 0.8f, 0.62f);
+
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(1.1f, 1.2f, 0.2f);
+
+            go.AddComponent<PatientInterview>();
         }
 
         /// <summary>
@@ -2368,6 +2452,14 @@ namespace Probation.EditorTools
 
                 Chart(patient.transform);
                 Debug.Log($"[Verify] Added the missing chart to {patient.name}.");
+            }
+
+            foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
+            {
+                if (patient.GetComponentInChildren<PatientInterview>(true) != null) continue;
+
+                Interview(patient.transform);
+                Debug.Log($"[Verify] Added the missing interview to {patient.name}.");
             }
 
             // Operation.SiteFor returns null on a miss and Evaluate silently does nothing, so a

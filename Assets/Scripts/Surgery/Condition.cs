@@ -85,6 +85,10 @@ namespace Probation.Surgery
         [Tooltip("Seconds of being nobody's priority before it stops waiting. This is the clock a brood puts on the whole ward.")]
         public float parasiteEscapesAfter = 55f;
 
+        [Header("What they say about it")]
+        [Tooltip("One per interview question, in the casebook's order. Leave an entry blank and the species answers instead. Testimony, not fact - a frightened alien is allowed to be wrong.")]
+        [TextArea] public string[] testimony = Array.Empty<string>();
+
         [Header("What to do about it")]
         public List<ConditionAnswer> answers = new();
 
