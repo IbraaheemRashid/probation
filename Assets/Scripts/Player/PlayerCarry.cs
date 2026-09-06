@@ -113,11 +113,16 @@ namespace Probation.Player
             if (_carriedBody != null)
             {
                 // Stays a dynamic body throughout - that is the whole point. It just stops
-                // falling, and stops colliding with the person carrying it.
+                // colliding with the person carrying it.
                 _carriedBody.angularVelocity = Vector3.zero;
-                _carriedBody.useGravity = false;
                 _carriedBody.interpolation = RigidbodyInterpolation.Interpolate;
                 IgnoreSelfCollision(true);
+
+                // Gravity off for a TOOL only. You hold a scalpel up; you drag a gurney along
+                // the floor. Killing gravity on anything heavy is why a vitals monitor took off
+                // the moment somebody grabbed it - the haul spring had nothing left to pull
+                // against and simply carried it up to hand height.
+                if (grabbable.Kind == GrabKind.Tool) _carriedBody.useGravity = false;
             }
             _grabbedFrame = Time.frameCount;
 

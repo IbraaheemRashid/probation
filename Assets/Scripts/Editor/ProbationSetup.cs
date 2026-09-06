@@ -802,6 +802,37 @@ namespace Probation.EditorTools
             Debug.Log("[Probation] Intake bay built.");
         }
 
+        /// <summary>
+        /// A gurney has wheels, and nothing else in this project does.
+        ///
+        /// Everything defaults to 0.6 friction, which on a crate is right and on a trolley is a
+        /// parking brake. With this project's -24 gravity a gurney with a patient on it presses
+        /// down with 2640 N and resists about 1584 N before it will slide - more than the haul
+        /// spring produces at any sane stretch, so a loaded gurney simply could not be pushed.
+        /// At 0.1 the same trolley resists 264 N and rolls.
+        ///
+        /// A little linear damping so a shoved one coasts to a stop rather than crossing the ship.
+        /// </summary>
+        private static PhysicsMaterial Wheeled()
+        {
+            const string path = "Assets/Settings/PM_Wheeled.physicsMaterial";
+
+            var existing = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(path);
+            if (existing != null) return existing;
+
+            var material = new PhysicsMaterial("Wheeled")
+            {
+                dynamicFriction = 0.1f,
+                staticFriction = 0.15f,
+                bounciness = 0f,
+                frictionCombine = PhysicsMaterialCombine.Minimum,
+            };
+
+            System.IO.Directory.CreateDirectory("Assets/Settings");
+            AssetDatabase.CreateAsset(material, path);
+            return material;
+        }
+
         private static void Trolley(Transform parent, int number, Vector3 position)
         {
             var go = Box($"Gurney {number}", position, new Vector3(0.9f, 1f, 2.1f));
@@ -814,6 +845,12 @@ namespace Probation.EditorTools
 
             // A gurney that tips over is a bug, not a joke.
             body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+
+            // Wheels. Without this a gurney with a patient on it cannot be pushed at all - see
+            // Wheeled(). The damping is so a shoved one coasts to a stop instead of crossing
+            // the ship, now that almost nothing is slowing it down.
+            body.linearDamping = 0.8f;
+            go.GetComponent<BoxCollider>().sharedMaterial = Wheeled();
 
             go.AddComponent<NetworkObject>();
 
@@ -2123,6 +2160,7 @@ namespace Probation.EditorTools
             added += BuildWardSystems(go);
             problems += VerifyCasebook();
             added += RetuneHauling();
+            added += FitWheels();
 
             // Wards built before the intake bay existed have no way to admit anybody, and the
             // symptom is simply that no patients ever appear. Repair it in place rather than
@@ -2459,6 +2497,36 @@ namespace Probation.EditorTools
                           "move anything heavier than an instrument tray against this project's gravity.");
 
             return fixed_;
+        }
+
+        /// <summary>
+        /// Put wheels on gurneys that were built before they had any.
+        ///
+        /// Same reason as RetuneHauling: a scene that already exists keeps whatever its
+        /// components were given when they were added, so changing the builder does nothing to it.
+        /// </summary>
+        private static int FitWheels()
+        {
+            var wheeled = Wheeled();
+            int fitted = 0;
+
+            foreach (var gurney in Object.FindObjectsByType<Gurney>(FindObjectsSortMode.None))
+            {
+                var collider = gurney.GetComponent<Collider>();
+                var body = gurney.GetComponent<Rigidbody>();
+                if (collider == null || body == null) continue;
+                if (collider.sharedMaterial == wheeled) continue;
+
+                collider.sharedMaterial = wheeled;
+                if (body.linearDamping < 0.79f) body.linearDamping = 0.8f;
+                fitted++;
+            }
+
+            if (fitted > 0)
+                Debug.Log($"[Verify] Fitted wheels to {fitted} gurneys. Loaded ones could not be " +
+                          "pushed at all against this project's gravity.");
+
+            return fitted;
         }
 
         private static int Ensure<T>(GameObject go) where T : Component
