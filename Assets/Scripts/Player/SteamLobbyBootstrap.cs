@@ -41,8 +41,22 @@ namespace Probation.Player
 
         // ------------------------------------------------------------------ ui
 
+        /// <summary>
+        /// Set by MainMenu while a title card is up. One component should be in charge of the
+        /// screen at a time, and a debug panel behind a title screen is nobody's idea of a menu.
+        /// </summary>
+        public bool PanelSuppressed { get; set; }
+
+        /// <summary>Open the Steam overlay on this lobby. No-op if there is no lobby.</summary>
+        public void InviteFriends()
+        {
+            if (_lobby.HasValue) SteamFriends.OpenGameInviteOverlay(_lobby.Value.Id);
+        }
+
         private void OnGUI()
         {
+            if (PanelSuppressed) return;
+
             GUILayout.BeginArea(new Rect(12f, 220f, 260f, 190f), GUI.skin.box);
             GUILayout.Label("STEAM");
 
@@ -79,7 +93,7 @@ namespace Probation.Player
 
         // ------------------------------------------------------------------ host
 
-        private async void HostLobby()
+        public async void HostLobby()
         {
             _status = "creating lobby...";
             try

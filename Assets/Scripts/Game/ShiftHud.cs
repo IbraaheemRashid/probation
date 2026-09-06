@@ -115,6 +115,7 @@ namespace Probation.Game
                 ShiftPhase.Shift => $"NIGHT {director.Day}/{director.ShiftsPerWeek}",
                 ShiftPhase.CoverUp => "COVER UP",
                 ShiftPhase.Review => "REVIEW",
+                ShiftPhase.Lobby => "BEFORE THE SHIFT",
                 _ => "WEEK OVER",
             };
             GUI.Label(new Rect(centre.x - 140f, timeRect.yMax - 2f, 280f, 18f), phase, _phase);

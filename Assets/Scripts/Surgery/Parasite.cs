@@ -98,7 +98,82 @@ namespace Probation.Surgery
             _grabbable = GetComponent<Grabbable>();
             _collider = GetComponent<Collider>();
             _body = GetComponent<Rigidbody>();
+
+            BuildVoice();
         }
+
+        /// <summary>
+        /// You hear one before you see one, and that is the whole horror budget.
+        ///
+        /// Synthesised rather than authored, the same way ScalpelTool makes its drag and
+        /// VitalsMonitor makes its beeps - a wet irregular skitter is broadband noise pushed
+        /// through a low pass, and nothing about it needs an artist yet.
+        ///
+        /// Spatial, and audible from further away than it is visible in a dim ward. The point is
+        /// that somebody says "can anyone else hear that" a good few seconds before anybody can
+        /// point at it.
+        /// </summary>
+        private void BuildVoice()
+        {
+            _voice = GetComponent<AudioSource>();
+            if (_voice == null) _voice = gameObject.AddComponent<AudioSource>();
+
+            _voice.clip = Skitter();
+            _voice.loop = true;
+            _voice.playOnAwake = false;
+            _voice.spatialBlend = 1f;
+            _voice.volume = 0f;
+            _voice.minDistance = 2f;
+            _voice.maxDistance = 22f;
+            _voice.Play();
+        }
+
+        private static AudioClip Skitter()
+        {
+            const int rate = 44100;
+            var samples = new float[rate * 3 / 2];
+
+            var random = new System.Random(77);
+            float previous = 0f;
+            float envelope = 0f;
+            float nextTick = 0f;
+
+            for (int i = 0; i < samples.Length; i++)
+            {
+                float white = (float)(random.NextDouble() * 2.0 - 1.0);
+                previous = Mathf.Lerp(previous, white, 0.14f);
+
+                // Irregular little scrapes rather than a drone. A steady tone reads as machinery;
+                // something uneven reads as alive, which is the only difference that matters.
+                if (i >= nextTick)
+                {
+                    envelope = 1f;
+                    nextTick = i + rate * (0.06f + (float)random.NextDouble() * 0.22f);
+                }
+
+                envelope *= 0.9993f;
+                samples[i] = previous * envelope;
+            }
+
+            // Crossfade the tail into the head so the loop has no click in it.
+            int blend = rate / 20;
+            for (int i = 0; i < blend; i++)
+            {
+                float t = i / (float)blend;
+                samples[i] = Mathf.Lerp(samples[samples.Length - blend + i], samples[i], t);
+            }
+
+            float peak = 0f;
+            foreach (float s in samples) peak = Mathf.Max(peak, Mathf.Abs(s));
+            if (peak > 0.0001f)
+                for (int i = 0; i < samples.Length; i++) samples[i] /= peak;
+
+            var clip = AudioClip.Create("ParasiteSkitter", samples.Length, 1, rate, false);
+            clip.SetData(samples, 0);
+            return clip;
+        }
+
+        private AudioSource _voice;
 
         public override void OnNetworkSpawn()
         {
@@ -211,6 +286,10 @@ namespace Probation.Surgery
             if (_collider != null) _collider.enabled = sedated;
             if (_grabbable != null) _grabbable.enabled = sedated;
             if (_body != null) _body.isKinematic = !sedated;
+
+            // Loud while awake, silent while under, gone while pooled. Everyone hears this, not
+            // just the host - it is the only warning anybody gets.
+            if (_voice != null) _voice.volume = State == ParasiteState.Loose ? 0.55f : 0f;
         }
 
         // ---------------------------------------------------------------- hunting

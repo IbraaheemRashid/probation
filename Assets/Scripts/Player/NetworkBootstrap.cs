@@ -31,8 +31,14 @@ namespace Probation.Player
             if (ApplyConnectionData(asHost: true)) net.StartHost();
         }
 
+        /// <summary>Set by MainMenu while the title card is up. Direct IP is a debug affordance,
+        /// and a debug affordance on top of a menu is just a bug that has not been reported yet.</summary>
+        public bool PanelSuppressed { get; set; }
+
         private void OnGUI()
         {
+            if (PanelSuppressed) return;
+
             var net = NetworkManager.Singleton;
             if (net == null) return;
 

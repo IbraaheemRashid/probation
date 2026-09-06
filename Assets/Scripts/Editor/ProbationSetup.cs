@@ -1636,6 +1636,7 @@ namespace Probation.EditorTools
             // three DIRECTORS are not - see BuildWardSystems.
             managerGo.AddComponent<SurgeryHud>();
             managerGo.AddComponent<ShiftHud>();
+            managerGo.AddComponent<MainMenu>();
 
             var managerSo = new SerializedObject(manager);
             AssignReference(managerSo, "NetworkConfig.NetworkTransport", transport);
@@ -2107,6 +2108,7 @@ namespace Probation.EditorTools
             added += Ensure<NetworkDiagnostics>(go);
             added += Ensure<SurgeryHud>(go);
             added += Ensure<ShiftHud>(go);
+            added += Ensure<MainMenu>(go);
 
             added += BuildWardSystems(go);
             problems += VerifyCasebook();

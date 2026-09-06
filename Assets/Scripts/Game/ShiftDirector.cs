@@ -26,6 +26,15 @@ namespace Probation.Game
         Review,
 
         WeekOver,
+
+        /// <summary>
+        /// Before any of it. The doors are shut, nothing is arriving, and the host has not said
+        /// go yet - which is the only window four people have to actually all be here.
+        ///
+        /// Appended rather than inserted: the phase replicates as its enum value, and renumbering
+        /// the others would make a host and a client disagree about what night it is.
+        /// </summary>
+        Lobby,
     }
 
     /// <summary>
@@ -63,7 +72,7 @@ namespace Probation.Game
 
         private readonly NetworkVariable<int> _day = new(1);
         private readonly NetworkVariable<float> _timeLeft = new();
-        private readonly NetworkVariable<ShiftPhase> _phase = new(ShiftPhase.Shift);
+        private readonly NetworkVariable<ShiftPhase> _phase = new(ShiftPhase.Lobby);
         private readonly NetworkVariable<int> _deaths = new();
         private readonly NetworkVariable<int> _discharged = new();
         private readonly NetworkVariable<int> _strikes = new();
@@ -200,6 +209,9 @@ namespace Probation.Game
                 return;
             }
 
+            // The lobby has no clock. It ends when somebody decides everybody is here.
+            if (_phase.Value == ShiftPhase.Lobby) return;
+
             _timeLeft.Value -= Time.deltaTime;
             if (_timeLeft.Value > 0f) return;
 
@@ -252,6 +264,21 @@ namespace Probation.Game
         {
             _phase.Value = phase;
             _timeLeft.Value = DurationOf(phase);
+        }
+
+        /// <summary>
+        /// Open the doors. Host only, and only out of the lobby.
+        ///
+        /// Deliberately a decision rather than a timer: a night that starts the instant the scene
+        /// loads means the first thirty seconds are always spent alone while people are still
+        /// joining, and the opening is the one part of a shift that should be four people.
+        /// </summary>
+        public void BeginNight()
+        {
+            if (!IsServer || _phase.Value != ShiftPhase.Lobby) return;
+
+            Enter(ShiftPhase.Shift);
+            Announce($"Night {_day.Value}. The doors are open. Quota {Quota}.");
         }
 
         /// <summary>Wipe the week and open the doors again. Host only.</summary>
