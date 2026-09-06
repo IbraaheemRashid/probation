@@ -1036,14 +1036,24 @@ namespace Probation.EditorTools
             book.procedures = new System.Collections.Generic.List<Procedure> { triage, extraction, broodExtraction };
             book.conditions = new System.Collections.Generic.List<Condition> { foreignBody, laceration, brood };
 
+            // Everything is available on night one.
+            //
+            // This was a teaching curve - lacerations first, extraction on night two, the Thoracid
+            // trap on three, broods on four - and as a curve it was right. It was also a way of
+            // making the first night, which is the only one most people will ever see, the one
+            // night that does not contain the game. A brood is the parasite and the parasite is
+            // the point.
+            //
+            // The weights still teach: you will run three or four lacerations before anything
+            // interesting arrives, which is exactly long enough to learn where the airlock is.
             book.arrivals = new System.Collections.Generic.List<CaseWeight>
             {
-                new() { condition = laceration,  species = thoracid, weight = 3f,   fromNight = 1 },
-                new() { condition = laceration,  species = vithrid,  weight = 3f,   fromNight = 1 },
-                new() { condition = foreignBody, species = vithrid,  weight = 2f,   fromNight = 2 },
-                new() { condition = foreignBody, species = thoracid, weight = 1.5f, fromNight = 3 },
-                new() { condition = brood,       species = thoracid, weight = 1.5f, fromNight = 4 },
-                new() { condition = brood,       species = vithrid,  weight = 1.5f, fromNight = 4 },
+                new() { condition = laceration,  species = thoracid, weight = 4f,   fromNight = 1 },
+                new() { condition = laceration,  species = vithrid,  weight = 4f,   fromNight = 1 },
+                new() { condition = foreignBody, species = vithrid,  weight = 2.5f, fromNight = 1 },
+                new() { condition = foreignBody, species = thoracid, weight = 1.5f, fromNight = 1 },
+                new() { condition = brood,       species = thoracid, weight = 1.5f, fromNight = 1 },
+                new() { condition = brood,       species = vithrid,  weight = 1.5f, fromNight = 1 },
             };
 
             EditorUtility.SetDirty(book);
@@ -2180,6 +2190,26 @@ namespace Probation.EditorTools
             if (beds == 0 || zones < 2 || sterilisers == 0)
             {
                 Debug.LogWarning($"[Verify] Ward incomplete: {beds} beds, {zones} zones, {sterilisers} sterilisers. Run step 7.");
+                problems++;
+            }
+
+            // Both of these fail silently and in ways nobody would connect to the cause. With no
+            // parasites in the pool a brood left too long simply does nothing; with no nodes, one
+            // that does get out walks in a straight line into the nearest wall.
+            int parasites = Object.FindObjectsByType<Parasite>(FindObjectsSortMode.None).Length;
+            int nodes = Object.FindObjectsByType<ShipNode>(FindObjectsSortMode.None).Length;
+
+            if (parasites == 0)
+            {
+                Debug.LogWarning("[Verify] No parasites in the pool. A brood left in a patient will " +
+                                 "quietly do nothing at all. Run step 10.");
+                problems++;
+            }
+
+            if (nodes < 4)
+            {
+                Debug.LogWarning($"[Verify] Only {nodes} ship nodes. Anything that hunts will walk " +
+                                 "straight at its target and into the first wall. Run step 10.");
                 problems++;
             }
 
