@@ -1921,7 +1921,7 @@ namespace Probation.EditorTools
             // Origin is the player spawn - NetworkManager spawns the prefab at its own transform
             // and Player.prefab sits at (0, 0, 0). Origin falls in the spine corridor, and nothing
             // solid may be put there.
-            Slab(t, "Ship floor", new Vector3(0f, -0.5f, 0f), new Vector3(31f, 1f, 22f), solid: true);
+            Slab(t, "Ship floor", new Vector3(0f, -0.5f, -0.5f), new Vector3(31f, 1f, 24f), solid: true);
 
             BuildWestBlock(t);
             BuildSpine(t);
@@ -2037,6 +2037,37 @@ namespace Probation.EditorTools
 
             Zone(t, "Morgue", new Vector3(11.25f, 1.5f, -4.75f), new Vector3(5f, 4f, 5.5f),
                  WardZoneKind.Morgue);
+
+            BuildIncinerator(t);
+        }
+
+        /// <summary>
+        /// A small room with one door, off the south corridor beside the airlock.
+        ///
+        /// The dead end is the design. The airlock takes bodies in one instant gesture; this
+        /// takes living things and makes you wait six seconds for it, in a room you have to
+        /// commit to walking into, beside something you sedated a while ago. A parasite that
+        /// comes round mid-burn is then loose in here, between you and the only way out.
+        ///
+        /// Deliberately next door to the airlock rather than somewhere else on the ship: the
+        /// guilty end stays one place, and the trip is one trip whatever you are carrying.
+        /// </summary>
+        private static void BuildIncinerator(Transform t)
+        {
+            WallZ(t, "Incinerator W", 2f, -11.5f, -7.75f);
+            WallX(t, "Incinerator S", -11.5f, 2f, 7f);
+            WallZ(t, "Incinerator E", 7f, -11.5f, -7.75f);
+
+            Slab(t, "INCINERATOR", new Vector3(4.5f, 0.02f, -9.6f),
+                 new Vector3(5f, 0.02f, 3.75f), solid: false);
+
+            // The chamber itself: a visible box you walk up to and drop something into, the same
+            // shape as the steriliser so it reads as the same kind of machine.
+            var chamber = Box("Incinerator", new Vector3(4.5f, 0.8f, -10.6f),
+                              new Vector3(1.8f, 1.6f, 1.2f));
+            chamber.transform.SetParent(t, true);
+            chamber.GetComponent<BoxCollider>().isTrigger = true;
+            chamber.AddComponent<Incinerator>();
         }
 
         /// <summary>
@@ -2060,7 +2091,8 @@ namespace Probation.EditorTools
             // South: Surgery to the Airlock, along the hull. This also fills the strip of floor
             // the first layout walled off and wasted.
             WallX(t, "South corridor N", -4.5f, -4f, 8.5f);
-            WallX(t, "South corridor S", -7.75f, -4f, 8.5f);
+            WallX(t, "South corridor S", -7.75f, -4f, 3.5f);
+            WallX(t, "South corridor S", -7.75f, 5.5f, 8.5f);   // gap: incinerator
             Slab(t, "SOUTH CORRIDOR", new Vector3(2.25f, 0.02f, -6.125f),
                  new Vector3(12.5f, 0.02f, 3.25f), solid: false);
 
@@ -2201,6 +2233,7 @@ namespace Probation.EditorTools
 
             Node(parent, "bridge door",     new Vector3(12f, 0f, 1.75f));
             Node(parent, "bridge",          new Vector3(12f, 0f, 4.75f));
+            Node(parent, "incinerator",     new Vector3(4.5f, 0f, -9.4f));
         }
 
         private static void Node(Transform parent, string name, Vector3 position)
@@ -2321,6 +2354,14 @@ namespace Probation.EditorTools
             // that does get out walks in a straight line into the nearest wall.
             int parasites = Object.FindObjectsByType<Parasite>(FindObjectsSortMode.None).Length;
             int nodes = Object.FindObjectsByType<ShipNode>(FindObjectsSortMode.None).Length;
+
+            if (Object.FindObjectsByType<Incinerator>(FindObjectsSortMode.None).Length == 0)
+            {
+                Debug.LogWarning("[Verify] No incinerator. Parasites can be sedated and carried " +
+                                 "but never disposed of, and every one left on the ship counts " +
+                                 "against the week. Run step 10.");
+                problems++;
+            }
 
             if (parasites == 0)
             {

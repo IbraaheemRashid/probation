@@ -142,9 +142,13 @@ There are no weapons. **The scalpel is the weapon, and so is the gas.**
 
 1. **Sedate it.** The gas rig works on parasites. Costs you the sedative you were going to use on a patient.
 2. **Pick it up.** Sedated, it is just an object.
-3. **Put it out the airlock.** The far end of the ship, deliberately.
+3. **Burn it.** The incinerator, at the far end of the ship, deliberately.
 
 It wakes up if you take too long. Everything you spend on it is something you were going to spend on a patient.
+
+**The incinerator is a room with one door and a six-second cycle**, and that is the whole reason it is not just a second airlock. You commit to walking in, the door is behind you, and you wait beside something you sedated a while ago. Take too long getting there and the cycle is where you find out: one that comes round mid-burn stops the machine and is loose in a small room, between you and the way out.
+
+The **airlock** takes bodies — one gesture, instant, no ceremony. The difference between the two is the point.
 
 ### The escalation
 
@@ -167,7 +171,8 @@ Small on purpose — 30 × 20 m, everything within five seconds. The ward this r
    │  WAITING        ├═══════ SPINE ════════┴──────────┴───┐
    ├────── door ─────┤                                     │
    │  SURGERY [1][2][3] ═══ south corridor ═══ AIRLOCK ────┘
-   └─────────────────┘
+   └─────────────────┘         │
+                          INCINERATOR (one door)
 ```
 
 **The Dock is the only way in or out for anybody alive. The Airlock is the only way out for anything you would rather was not found.** They are at opposite ends: the busy end and the guilty end.

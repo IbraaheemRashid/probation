@@ -36,15 +36,15 @@ namespace Probation.Game
             var net = NetworkManager.Singleton;
             if (net == null || !net.IsServer) return;
 
-            // The airlock is the only way anything gets off this ship, and that includes the
-            // things that were never patients. Same door, same gesture, no new mechanic.
+            // The airlock takes bodies. Living things go in the incinerator, which is a machine
+            // with a cycle rather than a hole in the hull - and the difference is the point. This
+            // used to accept both, and disposal was a formality: walk over, drop it, done.
             var parasite = other.GetComponentInParent<Parasite>();
             if (parasite != null)
             {
-                if (kind != WardZoneKind.Morgue) return;
+                if (kind == WardZoneKind.Morgue)
+                    ShiftDirector.Instance?.Announce("Not out the airlock. That one gets burned.");
 
-                IncidentLog.Record(parasite.Blame, "put one out of the airlock");
-                parasite.Incinerate();
                 return;
             }
 
