@@ -442,11 +442,15 @@ namespace Probation.Surgery
                 return;
             }
 
-            var locomotion = quarry.GetComponent<PlayerLocomotion>();
-            if (locomotion == null) return;
+            // Through the owner rather than straight at the component. PlayerLocomotion is
+            // disabled on every machine but its owner's, and this runs on the server - so calling
+            // Knockdown directly hit a disabled behaviour on a kinematic body and did nothing at
+            // all to anybody except the host.
+            var setup = quarry.GetComponent<PlayerNetworkSetup>();
+            if (setup == null) return;
 
             Vector3 shove = (quarry.position - transform.position).normalized * 3f + Vector3.up * 2f;
-            locomotion.Knockdown(knockdownSeconds, shove);
+            setup.KnockdownRpc(knockdownSeconds, shove);
 
             ShiftDirector.Instance?.Announce("It has got somebody.");
             IncidentLog.Record(Blame, "let one get loose on the ward");

@@ -57,14 +57,14 @@ A mass that **moves** between scans is not an organ and not a foreign body. It i
 
 A brood patient has something in them. You have about **55 seconds** before it stops waiting.
 
-- **Get it out properly** and it arrives already sedated, in your hands. Carry it to the **airlock**.
+- **Get it out properly** and it arrives already sedated, in your hands. Carry it to the **incinerator** - a small room with one door, off the south corridor. The machine takes six seconds, and it stops if the thing wakes up inside it.
 - **Leave it too long, or let them die,** and it lets itself out.
 
 Loose, it is slow, it is audible before it is visible, and it goes for whoever is least able to leave — patients first, and a **braced surgeon** above anybody else, because they have suspended their own view to work.
 
 It will not kill you. It knocks you down, and somebody has to stop what they are doing and come and pick you up. Reaching a patient is worse.
 
-**To deal with one:** hold a **gas rig** near it. Same object you sedate patients with — which is the cost. Then pick it up and put it out the airlock.
+**To deal with one:** hold a **gas rig** near it. Same object you sedate patients with — which is the cost. Then pick it up and carry it to the incinerator. The **airlock takes bodies, not living things**, and will tell you so.
 
 It wakes up after about 22 seconds, so putting it down somewhere and forgetting is not a plan.
 

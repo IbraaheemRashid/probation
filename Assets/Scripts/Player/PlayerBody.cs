@@ -53,21 +53,29 @@ namespace Probation.Player
         private Transform _rightHand;
 
         private NetworkObject _net;
+        private PlayerNetworkSetup _setup;
         private PlayerCarry _carry;
         private PlayerHands _hands;
 
         /// <summary>
         /// True while this intern cannot pick anything else up.
         ///
-        /// Derived rather than replicated: what somebody is holding is already a NetworkVariable
-        /// on the Grabbable itself, so this reads correctly for remote players without adding a
-        /// second copy of the same fact to the wire.
+        /// This used to be derived from Grabbable's replicated held-by state, on the reasoning
+        /// that the fact was already on the wire. It was not: Grabbable only writes _heldBy for
+        /// tools, and the Heavy branch keeps its haulers in a server-side list that never
+        /// replicates - so anybody pushing a gurney read as empty-handed on every screen but
+        /// their own, which is most of the discharge loop.
+        ///
+        /// The owner works it out and publishes one bit through PlayerNetworkSetup. It is about a
+        /// person rather than an object, and three different things make it true: a tool, a haul,
+        /// or a hand on a wound.
         /// </summary>
         public bool HandsFull { get; private set; }
 
         private void Awake()
         {
             _net = GetComponent<NetworkObject>();
+            _setup = GetComponent<PlayerNetworkSetup>();
             _carry = GetComponent<PlayerCarry>();
             _hands = GetComponent<PlayerHands>();
             _pivot = transform.Find("CameraPivot");
@@ -274,12 +282,17 @@ namespace Probation.Player
 
             if (_net.IsOwner)
             {
-                if (_carry != null && _carry.IsCarrying) return true;
-                if (_hands != null && _hands.Pressing != null) return true;
-                return false;
+                bool full = (_carry != null && _carry.IsCarrying)
+                            || (_hands != null && _hands.Pressing != null);
+
+                // Publish it, because nobody else can work this out. Grabbable.HeldByClient only
+                // ever answers for tools - the Heavy branch of the grab RPC never writes _heldBy -
+                // so reading it made anybody pushing a gurney look empty-handed to everybody else.
+                _setup?.ReportHandsFull(full);
+                return full;
             }
 
-            return Grabbable.HeldByClient(_net.OwnerClientId) != null;
+            return _setup != null && _setup.HandsFull;
         }
     }
 }
