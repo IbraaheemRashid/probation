@@ -10,6 +10,8 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 namespace Probation.EditorTools
@@ -1703,8 +1705,20 @@ namespace Probation.EditorTools
             }
 
             RenderSettings.skybox = sky;
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.212f, 0.227f, 0.259f);
+            RenderSettings.ambientMode = AmbientMode.Flat;
+
+            // Nearly nothing. This was a bright flat grey while the ship had no lamps in it -
+            // a crutch, and it made every room equally visible, which is the opposite of what a
+            // dark ship wants. Now that there are real fixtures the ambient only has to stop
+            // unlit faces going pure black, so the darkness between lights is genuine darkness.
+            RenderSettings.ambientLight = new Color(0.035f, 0.042f, 0.055f);
+
+            // Fog does more for a small ship than any amount of geometry: it hides the ends of
+            // corridors and makes a light down the far end read as a place rather than a lamp.
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogDensity = 0.022f;
+            RenderSettings.fogColor = new Color(0.03f, 0.04f, 0.055f);
         }
 
         /// <summary>
@@ -1805,6 +1819,202 @@ namespace Probation.EditorTools
                       "  - Steriliser       a trigger volume that cleans dirty instruments.\n" +
                       "Then run Probation > Setup > 6 for the instruments and " +
                       "Probation > Verify and Repair Scene, which will tell you what is still missing.");
+        }
+
+
+        // ------------------------------------------------------------------ light
+
+        private const string VolumeProfilePath = "Assets/Settings/ShipVolume.asset";
+        private const string FixtureMaterialPath = "Assets/Settings/M_Fixture.mat";
+
+        /// <summary>
+        /// The grade. Roughly half of whether this reads as a game rather than a greybox, and
+        /// about twenty minutes of work - which is the whole argument for doing it before models.
+        ///
+        /// Cold, desaturated and contrasty, with bloom thresholded high enough that only the
+        /// fixtures themselves bloom rather than every pale wall. Grain and a vignette because a
+        /// clean image reads as an editor viewport and a dirty one reads as somewhere.
+        /// </summary>
+        private static VolumeProfile ShipVolumeProfile()
+        {
+            var profile = LoadOrCreate<VolumeProfile>(VolumeProfilePath);
+
+            var tonemap = Effect<Tonemapping>(profile);
+            tonemap.mode.overrideState = true;
+            tonemap.mode.value = TonemappingMode.Neutral;
+
+            var colour = Effect<ColorAdjustments>(profile);
+            colour.postExposure.overrideState = true;
+            colour.postExposure.value = -0.35f;
+            colour.contrast.overrideState = true;
+            colour.contrast.value = 22f;
+            colour.saturation.overrideState = true;
+            colour.saturation.value = -18f;
+
+            var balance = Effect<WhiteBalance>(profile);
+            balance.temperature.overrideState = true;
+            balance.temperature.value = -22f;          // toward blue: this is a cold ship
+
+            var vignette = Effect<Vignette>(profile);
+            vignette.intensity.overrideState = true;
+            vignette.intensity.value = 0.34f;
+            vignette.smoothness.overrideState = true;
+            vignette.smoothness.value = 0.5f;
+
+            var grain = Effect<FilmGrain>(profile);
+            grain.type.overrideState = true;
+            grain.type.value = FilmGrainLookup.Medium2;
+            grain.intensity.overrideState = true;
+            grain.intensity.value = 0.32f;
+
+            // High threshold on purpose. Bloom everything and a grey wall glows; bloom only what
+            // is brighter than the scene and the fixtures read as actual sources of light.
+            var bloom = Effect<Bloom>(profile);
+            bloom.threshold.overrideState = true;
+            bloom.threshold.value = 1.1f;
+            bloom.intensity.overrideState = true;
+            bloom.intensity.value = 0.55f;
+            bloom.scatter.overrideState = true;
+            bloom.scatter.value = 0.62f;
+
+            EditorUtility.SetDirty(profile);
+            return profile;
+        }
+
+        private static T Effect<T>(VolumeProfile profile) where T : VolumeComponent =>
+            profile.TryGet<T>(out var existing) ? existing : profile.Add<T>(true);
+
+        /// <summary>An emissive box, so you can see where the light is coming from.</summary>
+        private static Material FixtureMaterial()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(FixtureMaterialPath);
+            if (existing != null) return existing;
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) return null;
+
+            var material = new Material(shader) { name = "M_Fixture" };
+            material.SetColor("_BaseColor", new Color(0.85f, 0.89f, 0.95f));
+            material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            material.SetColor("_EmissionColor", new Color(0.85f, 0.92f, 1f) * 3.2f);
+
+            System.IO.Directory.CreateDirectory("Assets/Settings");
+            AssetDatabase.CreateAsset(material, FixtureMaterialPath);
+            return material;
+        }
+
+        /// <summary>
+        /// One fixture: a visible emissive slab with a light under it.
+        ///
+        /// The slab is what makes the bloom mean anything, and it is why the ceiling being absent
+        /// does not matter - you read the room by where its lights are, not by its roof.
+        /// </summary>
+        private static void Fixture(Transform parent, string name, Vector3 at,
+                                    float range, float intensity, Color colour, float size = 1.6f)
+        {
+            var fixture = Box($"Light {name}", at, new Vector3(size, 0.12f, 0.5f));
+            fixture.transform.SetParent(parent, true);
+            Object.DestroyImmediate(fixture.GetComponent<Collider>());
+
+            var renderer = fixture.GetComponent<MeshRenderer>();
+            var material = FixtureMaterial();
+            if (renderer != null && material != null) renderer.sharedMaterial = material;
+
+            var go = new GameObject($"Lamp {name}");
+            go.transform.SetParent(parent, true);
+            go.transform.position = at - Vector3.up * 0.1f;
+
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = range;
+            light.intensity = intensity;
+            light.color = colour;
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.85f;
+        }
+
+        /// <summary>
+        /// Light the ship.
+        ///
+        /// The art direction in one rule: the ward is flat, cold and dead, and the only warm
+        /// things on board are the two rooms where something has gone wrong. Surgery is brighter
+        /// than anywhere else because that is where you have to see; corridors are dim because
+        /// that is where something can be standing.
+        /// </summary>
+        private static void BuildLighting(Transform t)
+        {
+            Color ward = new(0.78f, 0.86f, 1f);
+            Color surgical = new(0.92f, 0.96f, 1f);
+            Color furnace = new(1f, 0.55f, 0.22f);
+            Color warning = new(1f, 0.35f, 0.30f);
+
+            // Dock - open to space, so the light is thin and there is not much of it.
+            Fixture(t, "dock 1", new Vector3(-11.5f, 3.4f, 5.75f), 11f, 4.5f, ward);
+            Fixture(t, "dock 2", new Vector3(-6.25f, 3.4f, 5.75f), 11f, 4.5f, ward);
+
+            Fixture(t, "waiting 1", new Vector3(-11f, 3.4f, -0.5f), 10f, 4f, ward);
+            Fixture(t, "waiting 2", new Vector3(-6.5f, 3.4f, -0.5f), 10f, 4f, ward);
+
+            // Over each berth, and brighter than anything else on the ship.
+            Fixture(t, "berth 1", new Vector3(-11.5f, 3f, -6.5f), 9f, 9f, surgical, 2.2f);
+            Fixture(t, "berth 2", new Vector3(-9f, 3f, -6.5f), 9f, 9f, surgical, 2.2f);
+            Fixture(t, "berth 3", new Vector3(-6.5f, 3f, -6.5f), 9f, 9f, surgical, 2.2f);
+            Fixture(t, "surgery bench", new Vector3(-9f, 3.2f, -9.4f), 8f, 3.5f, ward);
+
+            // Corridors get one every eight metres or so, which leaves gaps between them. The
+            // gaps are the point.
+            Fixture(t, "spine 1", new Vector3(-1f, 3.4f, 0f), 9f, 3.2f, ward);
+            Fixture(t, "spine 2", new Vector3(6f, 3.4f, 0f), 9f, 3.2f, ward);
+            Fixture(t, "spine 3", new Vector3(12.5f, 3.4f, 0f), 8f, 3.2f, ward);
+
+            Fixture(t, "south corr", new Vector3(2f, 3.4f, -6.1f), 11f, 3f, ward);
+            Fixture(t, "north corr", new Vector3(-1f, 3.4f, 6.1f), 10f, 3f, ward);
+
+            Fixture(t, "cleaning", new Vector3(5.5f, 3.4f, 4.75f), 10f, 4.5f, ward);
+            Fixture(t, "bridge", new Vector3(12f, 3.4f, 4.75f), 9f, 2.4f, ward);
+
+            // The two warm rooms, and both of them mean something has gone wrong.
+            Fixture(t, "airlock", new Vector3(11.25f, 3.4f, -4.75f), 10f, 3.2f, warning);
+            Fixture(t, "incinerator", new Vector3(4.5f, 3f, -9.6f), 9f, 4f, furnace);
+
+            TuneRendering();
+            BuildGlobalVolume(t);
+        }
+
+        /// <summary>
+        /// Two render settings that would otherwise quietly cap the lighting.
+        ///
+        /// The per-object additional light limit was 4, so anything standing in a corridor with
+        /// several fixtures over it would simply be lit by four of them and dark to the rest.
+        /// And colour grading was on the low dynamic range path, which crushes highlights before
+        /// bloom ever sees them - so the fixtures would never actually glow.
+        /// </summary>
+        private static void TuneRendering()
+        {
+            if (GraphicsSettings.defaultRenderPipeline is not UniversalRenderPipelineAsset asset) return;
+
+            var so = new SerializedObject(asset);
+
+            var limit = so.FindProperty("m_AdditionalLightsPerObjectLimit");
+            if (limit != null) limit.intValue = 8;
+
+            var grading = so.FindProperty("m_ColorGradingMode");
+            if (grading != null) grading.enumValueIndex = 1;      // HighDynamicRange
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(asset);
+        }
+
+        private static void BuildGlobalVolume(Transform t)
+        {
+            var go = new GameObject("Post");
+            go.transform.SetParent(t, true);
+
+            var volume = go.AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.priority = 1f;
+            volume.sharedProfile = ShipVolumeProfile();
         }
 
         // ------------------------------------------------------------------ 10
@@ -1928,6 +2138,7 @@ namespace Probation.EditorTools
             BuildEastRooms(t);
             BuildCorridors(t);
             BuildShipProps(t);
+            BuildLighting(t);
 
             var intake = Object.FindFirstObjectByType<PatientIntake>();
             if (intake == null)
@@ -2354,6 +2565,17 @@ namespace Probation.EditorTools
             // that does get out walks in a straight line into the nearest wall.
             int parasites = Object.FindObjectsByType<Parasite>(FindObjectsSortMode.None).Length;
             int nodes = Object.FindObjectsByType<ShipNode>(FindObjectsSortMode.None).Length;
+
+            int lamps = 0;
+            foreach (var light in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+                if (light.type != LightType.Directional) lamps++;
+
+            if (lamps < 4)
+            {
+                Debug.LogWarning($"[Verify] Only {lamps} lamps in the scene. Ambient is deliberately " +
+                                 "almost nothing now, so a ship without fixtures is a dark ship. Run step 10.");
+                problems++;
+            }
 
             if (Object.FindObjectsByType<Incinerator>(FindObjectsSortMode.None).Length == 0)
             {
