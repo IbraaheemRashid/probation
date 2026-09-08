@@ -194,6 +194,15 @@ namespace Probation.Surgery
             if (condition != null && condition.untreatedHarmPerSecond > 0f && !ConditionResolved)
                 ApplyHarmInternal(condition.untreatedHarmPerSecond * Time.deltaTime, ulong.MaxValue, null);
 
+            // A brood does not wait forever to be nobody's priority. This is the clock one puts on
+            // the whole ward: triage everybody else first and it lets itself out, and then it is
+            // not a patient any more, it is loose.
+            if (condition != null && condition.carriesParasite && !ConditionResolved && !_parasiteGone)
+            {
+                _untended += Time.deltaTime;
+                if (_untended >= condition.parasiteEscapesAfter) LetTheParasiteOut();
+            }
+
             UpdateVitals();
         }
 
@@ -291,10 +300,13 @@ namespace Probation.Surgery
 
             ConditionResolved = false;
             _fragility.Value = 0f;
+            _parasiteGone = false;
+            _untended = 0f;
 
             // Or the new arrival inherits the last occupant's diagnosis, which is the worst
             // possible version of this bug: the chart reads plausibly and is about someone else.
             _chart?.Clear();
+            _interview?.Clear();
 
             SetState(_bleedRate > 0f ? PatientState.Bleeding : PatientState.Stable);
         }
@@ -344,9 +356,38 @@ namespace Probation.Surgery
             if (IsServer) ConditionResolved = true;
         }
 
+        /// <summary>
+        /// It stops waiting.
+        ///
+        /// Blamed on whoever wrote the chart, because a brood getting loose is a triage decision
+        /// that went wrong rather than a pair of hands that slipped - somebody looked at this
+        /// patient, decided they could wait, and they could not.
+        /// </summary>
+        public void LetTheParasiteOut()
+        {
+            if (!IsServer || _parasiteGone) return;
+
+            var condition = Condition;
+            if (condition == null || !condition.carriesParasite || ConditionResolved) return;
+
+            _parasiteGone = true;
+            ulong blame = _chart != null ? _chart.ChartedBy : ulong.MaxValue;
+            Parasite.Release(transform.position, blame);
+        }
+
+        /// <summary>Taking one out counts as it having gone, so it cannot also let itself out.</summary>
+        public void ParasiteRemoved()
+        {
+            if (IsServer) _parasiteGone = true;
+        }
+
+        private bool _parasiteGone;
+        private float _untended;
+
         /// <summary>Cached because the untreated-harm tick asks every frame, on every patient.</summary>
         private Operation _operation;
         private PatientChart _chart;
+        private PatientInterview _interview;
 
         /// <summary>The rate bleedOutSeconds is expressed against. A species at 45 bleeds as authored.</summary>
         private const float BaselineBleedOutSeconds = 45f;
@@ -355,6 +396,7 @@ namespace Probation.Surgery
         {
             _operation = GetComponent<Operation>();
             _chart = GetComponentInChildren<PatientChart>(true);
+            _interview = GetComponentInChildren<PatientInterview>(true);
         }
 
         /// <summary>
@@ -386,6 +428,9 @@ namespace Probation.Surgery
 
         private void Die(ulong byClientId)
         {
+            // Whatever was in there has no reason to stay now.
+            LetTheParasiteOut();
+
             _bleedRate = 0f;
             _conscious.Value = false;
             _heartRate.Value = 0f;

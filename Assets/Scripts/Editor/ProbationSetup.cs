@@ -10,6 +10,8 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 namespace Probation.EditorTools
@@ -802,6 +804,37 @@ namespace Probation.EditorTools
             Debug.Log("[Probation] Intake bay built.");
         }
 
+        /// <summary>
+        /// A gurney has wheels, and nothing else in this project does.
+        ///
+        /// Everything defaults to 0.6 friction, which on a crate is right and on a trolley is a
+        /// parking brake. With this project's -24 gravity a gurney with a patient on it presses
+        /// down with 2640 N and resists about 1584 N before it will slide - more than the haul
+        /// spring produces at any sane stretch, so a loaded gurney simply could not be pushed.
+        /// At 0.1 the same trolley resists 264 N and rolls.
+        ///
+        /// A little linear damping so a shoved one coasts to a stop rather than crossing the ship.
+        /// </summary>
+        private static PhysicsMaterial Wheeled()
+        {
+            const string path = "Assets/Settings/PM_Wheeled.physicsMaterial";
+
+            var existing = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(path);
+            if (existing != null) return existing;
+
+            var material = new PhysicsMaterial("Wheeled")
+            {
+                dynamicFriction = 0.1f,
+                staticFriction = 0.15f,
+                bounciness = 0f,
+                frictionCombine = PhysicsMaterialCombine.Minimum,
+            };
+
+            System.IO.Directory.CreateDirectory("Assets/Settings");
+            AssetDatabase.CreateAsset(material, path);
+            return material;
+        }
+
         private static void Trolley(Transform parent, int number, Vector3 position)
         {
             var go = Box($"Gurney {number}", position, new Vector3(0.9f, 1f, 2.1f));
@@ -814,6 +847,12 @@ namespace Probation.EditorTools
 
             // A gurney that tips over is a bug, not a joke.
             body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+
+            // Wheels. Without this a gurney with a patient on it cannot be pushed at all - see
+            // Wheeled(). The damping is so a shoved one coasts to a stop instead of crossing
+            // the ship, now that almost nothing is slowing it down.
+            body.linearDamping = 0.8f;
+            go.GetComponent<BoxCollider>().sharedMaterial = Wheeled();
 
             go.AddComponent<NetworkObject>();
 
@@ -893,6 +932,19 @@ namespace Probation.EditorTools
             species.bleedOutSeconds = 45f;
             species.wakesToNoise = true;          // volume becomes an input
             species.allergicToMetal = false;
+
+            // The second line is the whole trap, and a Thoracid hands it to you freely and
+            // truthfully. It is describing its own heart. Whether that kills them depends
+            // entirely on whether anybody in the room knows what a Thoracid is.
+            species.testimony = new[]
+            {
+                "Which one? There has always been something in there.",
+                "It beats. It has always beaten.",
+                "No more than usual.",
+                "Nothing happened to me. I woke up like this.",
+                "Never. Nobody has ever needed to.",
+            };
+
             EditorUtility.SetDirty(species);
             return species;
         }
@@ -912,6 +964,18 @@ namespace Probation.EditorTools
             species.bleedOutSeconds = 20f;
             species.wakesToNoise = false;
             species.allergicToMetal = true;
+
+            // The same question, on a species built to invert it. A Vithrid telling you nothing
+            // should be moving up there is telling you to cut.
+            species.testimony = new[]
+            {
+                "Not long. Days.",
+                "Nothing in me is supposed to move except my heart, and that sits low.",
+                "Everything hurts. We are made like that.",
+                "I could not tell you.",
+                "Twice. It is routine, for us.",
+            };
+
             EditorUtility.SetDirty(species);
             return species;
         }
@@ -940,6 +1004,19 @@ namespace Probation.EditorTools
             foreignBody.presentingSickness = 0.18f;
             foreignBody.arrivesHarmed = 0.05f;
             foreignBody.untreatedHarmPerSecond = 0.003f;
+
+            // Note the blank. "Does it move?" is left for the SPECIES to answer, and that is the
+            // entire trap: a Thoracid says it beats and always has, a Vithrid says nothing up
+            // there should be moving at all. Same presentation, same question, opposite answers,
+            // and the patient is being perfectly honest in both cases.
+            foreignBody.testimony = new[]
+            {
+                "A few days. It came on quickly.",
+                "",
+                "Only when I press on it.",
+                "I swallowed something, I think. I am not sure.",
+                "",
+            };
             foreignBody.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
                 // The trap. Nothing about this reads as a trap from across the ward, which is
@@ -975,6 +1052,15 @@ namespace Probation.EditorTools
             laceration.arrivesBleedingRate = 0.012f;
             laceration.arrivesHarmed = 0.08f;
             laceration.untreatedHarmPerSecond = 0.006f;
+
+            laceration.testimony = new[]
+            {
+                "An hour. Since the dock.",
+                "No. It just bleeds.",
+                "Yes. Badly.",
+                "Something in the cargo bay came loose.",
+                "",
+            };
             laceration.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
                 // No species set: the fallback, and the reason night one is survivable. The same
@@ -999,6 +1085,23 @@ namespace Probation.EditorTools
             brood.presentingSickness = 0.22f;
             brood.arrivesHarmed = 0.1f;
             brood.untreatedHarmPerSecond = 0.005f;
+
+            // A brood answers the movement question itself, so it never falls through to the
+            // species. That is how you tell a Thoracid's second heart from something else living
+            // in the same cavity: one beats, the other turns over.
+            brood.testimony = new[]
+            {
+                "A week. It has been getting worse.",
+                "Yes. It turns over when I lie down.",
+                "Deep down. Not on the skin.",
+                "I have not been anywhere. It was not there before.",
+                "",
+            };
+
+            // The clock a brood puts on the whole ward. Triage everybody else first and it stops
+            // waiting - and then it is not a patient any more, it is loose.
+            brood.carriesParasite = true;
+            brood.parasiteEscapesAfter = 55f;
             brood.answers = new System.Collections.Generic.List<ConditionAnswer>
             {
                 new() { species = null, treatment = broodExtraction, reliefIfCorrect = 0.35f,
@@ -1031,14 +1134,24 @@ namespace Probation.EditorTools
             book.procedures = new System.Collections.Generic.List<Procedure> { triage, extraction, broodExtraction };
             book.conditions = new System.Collections.Generic.List<Condition> { foreignBody, laceration, brood };
 
+            // Everything is available on night one.
+            //
+            // This was a teaching curve - lacerations first, extraction on night two, the Thoracid
+            // trap on three, broods on four - and as a curve it was right. It was also a way of
+            // making the first night, which is the only one most people will ever see, the one
+            // night that does not contain the game. A brood is the parasite and the parasite is
+            // the point.
+            //
+            // The weights still teach: you will run three or four lacerations before anything
+            // interesting arrives, which is exactly long enough to learn where the airlock is.
             book.arrivals = new System.Collections.Generic.List<CaseWeight>
             {
-                new() { condition = laceration,  species = thoracid, weight = 3f,   fromNight = 1 },
-                new() { condition = laceration,  species = vithrid,  weight = 3f,   fromNight = 1 },
-                new() { condition = foreignBody, species = vithrid,  weight = 2f,   fromNight = 2 },
-                new() { condition = foreignBody, species = thoracid, weight = 1.5f, fromNight = 3 },
-                new() { condition = brood,       species = thoracid, weight = 1.5f, fromNight = 4 },
-                new() { condition = brood,       species = vithrid,  weight = 1.5f, fromNight = 4 },
+                new() { condition = laceration,  species = thoracid, weight = 4f,   fromNight = 1 },
+                new() { condition = laceration,  species = vithrid,  weight = 4f,   fromNight = 1 },
+                new() { condition = foreignBody, species = vithrid,  weight = 2.5f, fromNight = 1 },
+                new() { condition = foreignBody, species = thoracid, weight = 1.5f, fromNight = 1 },
+                new() { condition = brood,       species = thoracid, weight = 1.5f, fromNight = 1 },
+                new() { condition = brood,       species = vithrid,  weight = 1.5f, fromNight = 1 },
             };
 
             EditorUtility.SetDirty(book);
@@ -1183,6 +1296,31 @@ namespace Probation.EditorTools
             Site(go.transform, "cavity", new Vector3(0f, 0.2f, 0.45f));
 
             Chart(go.transform);
+            Interview(go.transform);
+        }
+
+        /// <summary>
+        /// Where you stand to talk to somebody: the head end, opposite the chart.
+        ///
+        /// Its own child with a trigger collider, for the same reason the chart is - the patient
+        /// root is a Grabbable, which is already an IInteractable, and PlayerInteractor resolves
+        /// focus with GetComponentInParent. Two on one object and the winner depends on component
+        /// order.
+        ///
+        /// You write the chart at the foot and you ask them questions at the head, which is both
+        /// the right way round and a way of making the two jobs physically different places.
+        /// </summary>
+        private static void Interview(Transform parent)
+        {
+            var go = new GameObject("Interview");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(0f, 0.8f, 0.62f);
+
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(1.1f, 1.2f, 0.2f);
+
+            go.AddComponent<PatientInterview>();
         }
 
         /// <summary>
@@ -1567,8 +1705,20 @@ namespace Probation.EditorTools
             }
 
             RenderSettings.skybox = sky;
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.212f, 0.227f, 0.259f);
+            RenderSettings.ambientMode = AmbientMode.Flat;
+
+            // Nearly nothing. This was a bright flat grey while the ship had no lamps in it -
+            // a crutch, and it made every room equally visible, which is the opposite of what a
+            // dark ship wants. Now that there are real fixtures the ambient only has to stop
+            // unlit faces going pure black, so the darkness between lights is genuine darkness.
+            RenderSettings.ambientLight = new Color(0.035f, 0.042f, 0.055f);
+
+            // Fog does more for a small ship than any amount of geometry: it hides the ends of
+            // corridors and makes a light down the far end read as a place rather than a lamp.
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogDensity = 0.022f;
+            RenderSettings.fogColor = new Color(0.03f, 0.04f, 0.055f);
         }
 
         /// <summary>
@@ -1631,6 +1781,7 @@ namespace Probation.EditorTools
             // three DIRECTORS are not - see BuildWardSystems.
             managerGo.AddComponent<SurgeryHud>();
             managerGo.AddComponent<ShiftHud>();
+            managerGo.AddComponent<MainMenu>();
 
             var managerSo = new SerializedObject(manager);
             AssignReference(managerSo, "NetworkConfig.NetworkTransport", transport);
@@ -1668,6 +1819,202 @@ namespace Probation.EditorTools
                       "  - Steriliser       a trigger volume that cleans dirty instruments.\n" +
                       "Then run Probation > Setup > 6 for the instruments and " +
                       "Probation > Verify and Repair Scene, which will tell you what is still missing.");
+        }
+
+
+        // ------------------------------------------------------------------ light
+
+        private const string VolumeProfilePath = "Assets/Settings/ShipVolume.asset";
+        private const string FixtureMaterialPath = "Assets/Settings/M_Fixture.mat";
+
+        /// <summary>
+        /// The grade. Roughly half of whether this reads as a game rather than a greybox, and
+        /// about twenty minutes of work - which is the whole argument for doing it before models.
+        ///
+        /// Cold, desaturated and contrasty, with bloom thresholded high enough that only the
+        /// fixtures themselves bloom rather than every pale wall. Grain and a vignette because a
+        /// clean image reads as an editor viewport and a dirty one reads as somewhere.
+        /// </summary>
+        private static VolumeProfile ShipVolumeProfile()
+        {
+            var profile = LoadOrCreate<VolumeProfile>(VolumeProfilePath);
+
+            var tonemap = Effect<Tonemapping>(profile);
+            tonemap.mode.overrideState = true;
+            tonemap.mode.value = TonemappingMode.Neutral;
+
+            var colour = Effect<ColorAdjustments>(profile);
+            colour.postExposure.overrideState = true;
+            colour.postExposure.value = -0.35f;
+            colour.contrast.overrideState = true;
+            colour.contrast.value = 22f;
+            colour.saturation.overrideState = true;
+            colour.saturation.value = -18f;
+
+            var balance = Effect<WhiteBalance>(profile);
+            balance.temperature.overrideState = true;
+            balance.temperature.value = -22f;          // toward blue: this is a cold ship
+
+            var vignette = Effect<Vignette>(profile);
+            vignette.intensity.overrideState = true;
+            vignette.intensity.value = 0.34f;
+            vignette.smoothness.overrideState = true;
+            vignette.smoothness.value = 0.5f;
+
+            var grain = Effect<FilmGrain>(profile);
+            grain.type.overrideState = true;
+            grain.type.value = FilmGrainLookup.Medium2;
+            grain.intensity.overrideState = true;
+            grain.intensity.value = 0.32f;
+
+            // High threshold on purpose. Bloom everything and a grey wall glows; bloom only what
+            // is brighter than the scene and the fixtures read as actual sources of light.
+            var bloom = Effect<Bloom>(profile);
+            bloom.threshold.overrideState = true;
+            bloom.threshold.value = 1.1f;
+            bloom.intensity.overrideState = true;
+            bloom.intensity.value = 0.55f;
+            bloom.scatter.overrideState = true;
+            bloom.scatter.value = 0.62f;
+
+            EditorUtility.SetDirty(profile);
+            return profile;
+        }
+
+        private static T Effect<T>(VolumeProfile profile) where T : VolumeComponent =>
+            profile.TryGet<T>(out var existing) ? existing : profile.Add<T>(true);
+
+        /// <summary>An emissive box, so you can see where the light is coming from.</summary>
+        private static Material FixtureMaterial()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(FixtureMaterialPath);
+            if (existing != null) return existing;
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) return null;
+
+            var material = new Material(shader) { name = "M_Fixture" };
+            material.SetColor("_BaseColor", new Color(0.85f, 0.89f, 0.95f));
+            material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            material.SetColor("_EmissionColor", new Color(0.85f, 0.92f, 1f) * 3.2f);
+
+            System.IO.Directory.CreateDirectory("Assets/Settings");
+            AssetDatabase.CreateAsset(material, FixtureMaterialPath);
+            return material;
+        }
+
+        /// <summary>
+        /// One fixture: a visible emissive slab with a light under it.
+        ///
+        /// The slab is what makes the bloom mean anything, and it is why the ceiling being absent
+        /// does not matter - you read the room by where its lights are, not by its roof.
+        /// </summary>
+        private static void Fixture(Transform parent, string name, Vector3 at,
+                                    float range, float intensity, Color colour, float size = 1.6f)
+        {
+            var fixture = Box($"Light {name}", at, new Vector3(size, 0.12f, 0.5f));
+            fixture.transform.SetParent(parent, true);
+            Object.DestroyImmediate(fixture.GetComponent<Collider>());
+
+            var renderer = fixture.GetComponent<MeshRenderer>();
+            var material = FixtureMaterial();
+            if (renderer != null && material != null) renderer.sharedMaterial = material;
+
+            var go = new GameObject($"Lamp {name}");
+            go.transform.SetParent(parent, true);
+            go.transform.position = at - Vector3.up * 0.1f;
+
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = range;
+            light.intensity = intensity;
+            light.color = colour;
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.85f;
+        }
+
+        /// <summary>
+        /// Light the ship.
+        ///
+        /// The art direction in one rule: the ward is flat, cold and dead, and the only warm
+        /// things on board are the two rooms where something has gone wrong. Surgery is brighter
+        /// than anywhere else because that is where you have to see; corridors are dim because
+        /// that is where something can be standing.
+        /// </summary>
+        private static void BuildLighting(Transform t)
+        {
+            Color ward = new(0.78f, 0.86f, 1f);
+            Color surgical = new(0.92f, 0.96f, 1f);
+            Color furnace = new(1f, 0.55f, 0.22f);
+            Color warning = new(1f, 0.35f, 0.30f);
+
+            // Dock - open to space, so the light is thin and there is not much of it.
+            Fixture(t, "dock 1", new Vector3(-11.5f, 3.4f, 5.75f), 11f, 4.5f, ward);
+            Fixture(t, "dock 2", new Vector3(-6.25f, 3.4f, 5.75f), 11f, 4.5f, ward);
+
+            Fixture(t, "waiting 1", new Vector3(-11f, 3.4f, -0.5f), 10f, 4f, ward);
+            Fixture(t, "waiting 2", new Vector3(-6.5f, 3.4f, -0.5f), 10f, 4f, ward);
+
+            // Over each berth, and brighter than anything else on the ship.
+            Fixture(t, "berth 1", new Vector3(-11.5f, 3f, -6.5f), 9f, 9f, surgical, 2.2f);
+            Fixture(t, "berth 2", new Vector3(-9f, 3f, -6.5f), 9f, 9f, surgical, 2.2f);
+            Fixture(t, "berth 3", new Vector3(-6.5f, 3f, -6.5f), 9f, 9f, surgical, 2.2f);
+            Fixture(t, "surgery bench", new Vector3(-9f, 3.2f, -9.4f), 8f, 3.5f, ward);
+
+            // Corridors get one every eight metres or so, which leaves gaps between them. The
+            // gaps are the point.
+            Fixture(t, "spine 1", new Vector3(-1f, 3.4f, 0f), 9f, 3.2f, ward);
+            Fixture(t, "spine 2", new Vector3(6f, 3.4f, 0f), 9f, 3.2f, ward);
+            Fixture(t, "spine 3", new Vector3(12.5f, 3.4f, 0f), 8f, 3.2f, ward);
+
+            Fixture(t, "south corr", new Vector3(2f, 3.4f, -6.1f), 11f, 3f, ward);
+            Fixture(t, "north corr", new Vector3(-1f, 3.4f, 6.1f), 10f, 3f, ward);
+
+            Fixture(t, "cleaning", new Vector3(5.5f, 3.4f, 4.75f), 10f, 4.5f, ward);
+            Fixture(t, "bridge", new Vector3(12f, 3.4f, 4.75f), 9f, 2.4f, ward);
+
+            // The two warm rooms, and both of them mean something has gone wrong.
+            Fixture(t, "airlock", new Vector3(11.25f, 3.4f, -4.75f), 10f, 3.2f, warning);
+            Fixture(t, "incinerator", new Vector3(4.5f, 3f, -9.6f), 9f, 4f, furnace);
+
+            TuneRendering();
+            BuildGlobalVolume(t);
+        }
+
+        /// <summary>
+        /// Two render settings that would otherwise quietly cap the lighting.
+        ///
+        /// The per-object additional light limit was 4, so anything standing in a corridor with
+        /// several fixtures over it would simply be lit by four of them and dark to the rest.
+        /// And colour grading was on the low dynamic range path, which crushes highlights before
+        /// bloom ever sees them - so the fixtures would never actually glow.
+        /// </summary>
+        private static void TuneRendering()
+        {
+            if (GraphicsSettings.defaultRenderPipeline is not UniversalRenderPipelineAsset asset) return;
+
+            var so = new SerializedObject(asset);
+
+            var limit = so.FindProperty("m_AdditionalLightsPerObjectLimit");
+            if (limit != null) limit.intValue = 8;
+
+            var grading = so.FindProperty("m_ColorGradingMode");
+            if (grading != null) grading.enumValueIndex = 1;      // HighDynamicRange
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(asset);
+        }
+
+        private static void BuildGlobalVolume(Transform t)
+        {
+            var go = new GameObject("Post");
+            go.transform.SetParent(t, true);
+
+            var volume = go.AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.priority = 1f;
+            volume.sharedProfile = ShipVolumeProfile();
         }
 
         // ------------------------------------------------------------------ 10
@@ -1784,13 +2131,14 @@ namespace Probation.EditorTools
             // Origin is the player spawn - NetworkManager spawns the prefab at its own transform
             // and Player.prefab sits at (0, 0, 0). Origin falls in the spine corridor, and nothing
             // solid may be put there.
-            Slab(t, "Ship floor", new Vector3(0f, -0.5f, 0f), new Vector3(31f, 1f, 22f), solid: true);
+            Slab(t, "Ship floor", new Vector3(0f, -0.5f, -0.5f), new Vector3(31f, 1f, 24f), solid: true);
 
             BuildWestBlock(t);
             BuildSpine(t);
             BuildEastRooms(t);
             BuildCorridors(t);
             BuildShipProps(t);
+            BuildLighting(t);
 
             var intake = Object.FindFirstObjectByType<PatientIntake>();
             if (intake == null)
@@ -1900,6 +2248,37 @@ namespace Probation.EditorTools
 
             Zone(t, "Morgue", new Vector3(11.25f, 1.5f, -4.75f), new Vector3(5f, 4f, 5.5f),
                  WardZoneKind.Morgue);
+
+            BuildIncinerator(t);
+        }
+
+        /// <summary>
+        /// A small room with one door, off the south corridor beside the airlock.
+        ///
+        /// The dead end is the design. The airlock takes bodies in one instant gesture; this
+        /// takes living things and makes you wait six seconds for it, in a room you have to
+        /// commit to walking into, beside something you sedated a while ago. A parasite that
+        /// comes round mid-burn is then loose in here, between you and the only way out.
+        ///
+        /// Deliberately next door to the airlock rather than somewhere else on the ship: the
+        /// guilty end stays one place, and the trip is one trip whatever you are carrying.
+        /// </summary>
+        private static void BuildIncinerator(Transform t)
+        {
+            WallZ(t, "Incinerator W", 2f, -11.5f, -7.75f);
+            WallX(t, "Incinerator S", -11.5f, 2f, 7f);
+            WallZ(t, "Incinerator E", 7f, -11.5f, -7.75f);
+
+            Slab(t, "INCINERATOR", new Vector3(4.5f, 0.02f, -9.6f),
+                 new Vector3(5f, 0.02f, 3.75f), solid: false);
+
+            // The chamber itself: a visible box you walk up to and drop something into, the same
+            // shape as the steriliser so it reads as the same kind of machine.
+            var chamber = Box("Incinerator", new Vector3(4.5f, 0.8f, -10.6f),
+                              new Vector3(1.8f, 1.6f, 1.2f));
+            chamber.transform.SetParent(t, true);
+            chamber.GetComponent<BoxCollider>().isTrigger = true;
+            chamber.AddComponent<Incinerator>();
         }
 
         /// <summary>
@@ -1923,7 +2302,8 @@ namespace Probation.EditorTools
             // South: Surgery to the Airlock, along the hull. This also fills the strip of floor
             // the first layout walled off and wasted.
             WallX(t, "South corridor N", -4.5f, -4f, 8.5f);
-            WallX(t, "South corridor S", -7.75f, -4f, 8.5f);
+            WallX(t, "South corridor S", -7.75f, -4f, 3.5f);
+            WallX(t, "South corridor S", -7.75f, 5.5f, 8.5f);   // gap: incinerator
             Slab(t, "SOUTH CORRIDOR", new Vector3(2.25f, 0.02f, -6.125f),
                  new Vector3(12.5f, 0.02f, 3.25f), solid: false);
 
@@ -1989,6 +2369,90 @@ namespace Probation.EditorTools
             }
 
             for (int i = 0; i < 8; i++) BuildPatient(t, $"Patient {i + 1}");
+
+            // Four is plenty. Nothing spawns these - every one that ends up on the ship got there
+            // because somebody left a brood in a patient too long, or a brood patient died, or
+            // somebody pulled one out and put it down. If all four are loose at once, the night
+            // has gone extremely badly and running out is the least of anybody's problems.
+            for (int i = 0; i < 4; i++) BuildParasite(t, i + 1);
+
+            BuildShipNodes(t);
+        }
+
+        /// <summary>
+        /// One pooled parasite, parked under the map until it is somebody's fault.
+        /// </summary>
+        private static void BuildParasite(Transform parent, int number)
+        {
+            var go = Box($"Parasite {number}", new Vector3(0f, -40f, 0f), new Vector3(0.34f, 0.22f, 0.52f));
+            go.transform.SetParent(parent, true);
+
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 6f;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            go.AddComponent<NetworkObject>();
+
+            var grabbable = go.AddComponent<Grabbable>();
+            var so = new SerializedObject(grabbable);
+            so.FindProperty("displayName").stringValue = "specimen";
+
+            // The empty toolId is load-bearing. Operation treats ANY held grabbable with a
+            // non-empty toolId inside a step's tolerance as the wrong instrument and hurts the
+            // patient for it - so carrying one of these past an open body would injure them.
+            so.FindProperty("toolId").stringValue = "";
+            so.FindProperty("kind").enumValueIndex = (int)GrabKind.Tool;
+            so.FindProperty("encumbrance").floatValue = 0.25f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ConfigureTransform(go.AddComponent<NetworkTransform>(),
+                               localSpace: false, syncScale: false, ownerAuthority: true);
+
+            go.AddComponent<Parasite>();
+        }
+
+        /// <summary>
+        /// The graph anything that hunts walks along: room centres and doorways.
+        ///
+        /// No NavMesh, deliberately. The ship is generated from code and re-baking a mesh every
+        /// time a wall moves is a worse problem than the one it solves. Eighteen nodes describe
+        /// this ship completely, and the links between them are worked out at runtime by line of
+        /// sight - so a map somebody builds by hand works too, as long as they drop nodes in it.
+        /// </summary>
+        private static void BuildShipNodes(Transform parent)
+        {
+            Node(parent, "dock",            new Vector3(-9f, 0f, 5.75f));
+            Node(parent, "dock door",       new Vector3(-9f, 0f, 2.5f));
+            Node(parent, "waiting",         new Vector3(-9f, 0f, -0.5f));
+            Node(parent, "surgery door",    new Vector3(-9f, 0f, -3.5f));
+            Node(parent, "surgery",         new Vector3(-9f, 0f, -6.5f));
+
+            Node(parent, "south corr W",    new Vector3(-4f, 0f, -6.1f));
+            Node(parent, "south corr E",    new Vector3(8f, 0f, -6.1f));
+            Node(parent, "airlock",         new Vector3(11.25f, 0f, -4.75f));
+            Node(parent, "airlock door",    new Vector3(11f, 0f, -1.75f));
+
+            Node(parent, "spine W",         new Vector3(-4f, 0f, 0f));
+            Node(parent, "spine mid",       new Vector3(5.5f, 0f, 0f));
+            Node(parent, "spine E",         new Vector3(12f, 0f, 0f));
+
+            Node(parent, "cleaning door",   new Vector3(5.5f, 0f, 1.75f));
+            Node(parent, "cleaning",        new Vector3(5.5f, 0f, 4.75f));
+            Node(parent, "north corr E",    new Vector3(2f, 0f, 6.1f));
+            Node(parent, "north corr W",    new Vector3(-4f, 0f, 6.1f));
+
+            Node(parent, "bridge door",     new Vector3(12f, 0f, 1.75f));
+            Node(parent, "bridge",          new Vector3(12f, 0f, 4.75f));
+            Node(parent, "incinerator",     new Vector3(4.5f, 0f, -9.4f));
+        }
+
+        private static void Node(Transform parent, string name, Vector3 position)
+        {
+            var go = new GameObject($"Node {name}");
+            go.transform.SetParent(parent, true);
+            go.transform.position = position;
+            go.AddComponent<ShipNode>();
         }
 
         [MenuItem("Probation/Verify and Repair Scene", priority = 20)]
@@ -2019,9 +2483,12 @@ namespace Probation.EditorTools
             added += Ensure<NetworkDiagnostics>(go);
             added += Ensure<SurgeryHud>(go);
             added += Ensure<ShiftHud>(go);
+            added += Ensure<MainMenu>(go);
 
             added += BuildWardSystems(go);
             problems += VerifyCasebook();
+            added += RetuneHauling();
+            added += FitWheels();
 
             // Wards built before the intake bay existed have no way to admit anybody, and the
             // symptom is simply that no patients ever appear. Repair it in place rather than
@@ -2090,6 +2557,45 @@ namespace Probation.EditorTools
             if (beds == 0 || zones < 2 || sterilisers == 0)
             {
                 Debug.LogWarning($"[Verify] Ward incomplete: {beds} beds, {zones} zones, {sterilisers} sterilisers. Run step 7.");
+                problems++;
+            }
+
+            // Both of these fail silently and in ways nobody would connect to the cause. With no
+            // parasites in the pool a brood left too long simply does nothing; with no nodes, one
+            // that does get out walks in a straight line into the nearest wall.
+            int parasites = Object.FindObjectsByType<Parasite>(FindObjectsSortMode.None).Length;
+            int nodes = Object.FindObjectsByType<ShipNode>(FindObjectsSortMode.None).Length;
+
+            int lamps = 0;
+            foreach (var light in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+                if (light.type != LightType.Directional) lamps++;
+
+            if (lamps < 4)
+            {
+                Debug.LogWarning($"[Verify] Only {lamps} lamps in the scene. Ambient is deliberately " +
+                                 "almost nothing now, so a ship without fixtures is a dark ship. Run step 10.");
+                problems++;
+            }
+
+            if (Object.FindObjectsByType<Incinerator>(FindObjectsSortMode.None).Length == 0)
+            {
+                Debug.LogWarning("[Verify] No incinerator. Parasites can be sedated and carried " +
+                                 "but never disposed of, and every one left on the ship counts " +
+                                 "against the week. Run step 10.");
+                problems++;
+            }
+
+            if (parasites == 0)
+            {
+                Debug.LogWarning("[Verify] No parasites in the pool. A brood left in a patient will " +
+                                 "quietly do nothing at all. Run step 10.");
+                problems++;
+            }
+
+            if (nodes < 4)
+            {
+                Debug.LogWarning($"[Verify] Only {nodes} ship nodes. Anything that hunts will walk " +
+                                 "straight at its target and into the first wall. Run step 10.");
                 problems++;
             }
 
@@ -2211,6 +2717,14 @@ namespace Probation.EditorTools
                 Debug.Log($"[Verify] Added the missing chart to {patient.name}.");
             }
 
+            foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
+            {
+                if (patient.GetComponentInChildren<PatientInterview>(true) != null) continue;
+
+                Interview(patient.transform);
+                Debug.Log($"[Verify] Added the missing interview to {patient.name}.");
+            }
+
             // Operation.SiteFor returns null on a miss and Evaluate silently does nothing, so a
             // step aimed at a site nobody has produces a patient who can never be operated on
             // and never explains why.
@@ -2297,6 +2811,77 @@ namespace Probation.EditorTools
             Debug.Log($"[Verify] Moved {typeof(T).Name} onto '{WardSystemsName}'. On the " +
                       "NetworkManager it could never spawn, so it never ran at all.");
             return 1;
+        }
+
+        /// <summary>
+        /// Bring already-placed Grabbables up to the current haul tuning.
+        ///
+        /// Serialized fields keep whatever value they had when the component was added, so
+        /// changing a default in code does nothing to a scene that already exists. The old
+        /// numbers were tuned for Earth gravity and this project runs at -24: a 40 kg gurney
+        /// presses down with 960 N and resists about 576 N of friction, while the old spring
+        /// produced 300 N at half a metre of stretch. Gurneys, monitors and patients simply
+        /// could not be hauled.
+        ///
+        /// Only touches values that are still on the old defaults, so anything deliberately
+        /// tuned by hand is left alone.
+        /// </summary>
+        private static int RetuneHauling()
+        {
+            int fixed_ = 0;
+
+            foreach (var grabbable in Object.FindObjectsByType<Grabbable>(FindObjectsSortMode.None))
+            {
+                var so = new SerializedObject(grabbable);
+                var spring = so.FindProperty("haulSpring");
+                var damper = so.FindProperty("haulDamper");
+                var max = so.FindProperty("maxHaulForce");
+                if (spring == null || damper == null || max == null) continue;
+
+                if (!Mathf.Approximately(spring.floatValue, 600f)) continue;
+
+                spring.floatValue = 3000f;
+                damper.floatValue = 350f;
+                max.floatValue = 4000f;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                fixed_++;
+            }
+
+            if (fixed_ > 0)
+                Debug.Log($"[Verify] Retuned hauling on {fixed_} objects. The old spring could not " +
+                          "move anything heavier than an instrument tray against this project's gravity.");
+
+            return fixed_;
+        }
+
+        /// <summary>
+        /// Put wheels on gurneys that were built before they had any.
+        ///
+        /// Same reason as RetuneHauling: a scene that already exists keeps whatever its
+        /// components were given when they were added, so changing the builder does nothing to it.
+        /// </summary>
+        private static int FitWheels()
+        {
+            var wheeled = Wheeled();
+            int fitted = 0;
+
+            foreach (var gurney in Object.FindObjectsByType<Gurney>(FindObjectsSortMode.None))
+            {
+                var collider = gurney.GetComponent<Collider>();
+                var body = gurney.GetComponent<Rigidbody>();
+                if (collider == null || body == null) continue;
+                if (collider.sharedMaterial == wheeled) continue;
+
+                collider.sharedMaterial = wheeled;
+                if (body.linearDamping < 0.79f) body.linearDamping = 0.8f;
+                fitted++;
+            }
+
+            if (fitted > 0)
+                Debug.Log($"[Verify] Fitted wheels to {fitted} gurneys. Loaded ones could not be " +
+                          "pushed at all against this project's gravity.");
+
+            return fitted;
         }
 
         private static int Ensure<T>(GameObject go) where T : Component

@@ -143,23 +143,23 @@ MonoBehaviour:
   crouchRideHeight: 0.65
   probeExtra: 0.3
   probeRadius: 0.2
-  rideSpring: 30000
-  rideDamper: 3000
+  rideSpring: 45000
+  rideDamper: 3600
   standCapsuleHeight: 1.4
   crouchCapsuleHeight: 0.8
   standEyeHeight: 0.65
   crouchEyeHeight: 0.35
   crouchBlendSpeed: 10
-  walkSpeed: 3.2
-  sprintSpeed: 5.2
-  crouchSpeed: 1.5
-  groundAcceleration: 45
-  airAcceleration: 10
-  jumpHeight: 0.9
+  walkSpeed: 4.2
+  sprintSpeed: 6.8
+  crouchSpeed: 1.8
+  groundAcceleration: 65
+  airAcceleration: 14
+  jumpHeight: 0.85
   coyoteTime: 0.12
   jumpBuffer: 0.12
   springMuteAfterJump: 0.2
-  fallGravityMultiplier: 1.8
+  fallGravityMultiplier: 1.25
   maxSlopeAngle: 50
   sprintSeconds: 6
   recoverSeconds: 5
@@ -304,6 +304,7 @@ MonoBehaviour:
   handAnchor: {fileID: 7333480009751986023}
   maxCarrySpeed: 26
   massDrag: 0.5
+  carryForce: 8
   maxCarrySpin: 32
   throwBoost: 1.15
   dropDistance: 2
@@ -369,7 +370,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.PlayerBody
   restHand: {x: 0.34, y: -0.5, z: 0.12}
-  busyHand: {x: 0.14, y: -0.28, z: 0.52}
+  graspSpread: 0.15
   handEase: 12
 --- !u!1 &2889585250866751481
 GameObject:

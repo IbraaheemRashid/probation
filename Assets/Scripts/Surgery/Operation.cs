@@ -285,6 +285,16 @@ namespace Probation.Surgery
             if (IsCorrect)
             {
                 _patient.ResolveCondition();
+
+                // Getting a brood out correctly does not finish anything, it moves the problem
+                // into your hands. It comes out already under, in front of you, and the airlock
+                // is at the far end of the ship - and it wakes up.
+                if (_patient.Condition != null && _patient.Condition.carriesParasite)
+                {
+                    _patient.ParasiteRemoved();
+                    Parasite.Extract(_patient.transform.position + Vector3.up * 0.7f, CharterOrHolder());
+                }
+
                 _patient.StopBleeding();
                 _patient.Heal(answer != null ? answer.reliefIfCorrect : DefaultRelief);
 
