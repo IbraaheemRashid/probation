@@ -292,7 +292,7 @@ namespace Probation.Surgery
             _speciesIndex.Value = book != null && assigned != null ? book.IndexOf(assigned) : -1;
             _conditionIndex.Value = book != null && condition != null ? book.IndexOf(condition) : -1;
 
-            HasLeft = false;
+            _hasLeft.Value = false;
             _bleedRate = condition != null ? Mathf.Max(0f, condition.arrivesBleedingRate) : 0f;
             _harm.Value = Mathf.Clamp01(condition != null ? condition.arrivesHarmed : startingHarm);
             _heartRate.Value = Species != null ? Species.restingHeartRate : 70f;
@@ -314,8 +314,20 @@ namespace Probation.Surgery
         /// <summary>The trolley this one is on, if any. Set by Gurney.</summary>
         public Probation.Game.Gurney Ride { get; set; }
 
-        /// <summary>Off the ward entirely - discharged or in the morgue. Waiting to be re-used.</summary>
-        public bool HasLeft { get; private set; } = true;
+        /// <summary>
+        /// Off the ward entirely - discharged or in the morgue. Waiting to be re-used.
+        ///
+        /// Replicated, and it has to be. This was a plain auto-property written only inside
+        /// server-gated methods, which meant it stayed true forever on every client - and both
+        /// PatientChart.CanInteract and PatientInterview.CanTalk test it. The effect was that
+        /// only the host could write a chart or ask a patient anything: three players out of four
+        /// could carry tools and push trolleys and never once diagnose somebody.
+        ///
+        /// It is one field, and it made the game single-player without a single error anywhere.
+        /// </summary>
+        public bool HasLeft => _hasLeft.Value;
+
+        private readonly NetworkVariable<bool> _hasLeft = new(true);
 
         /// <summary>Their procedure is done and they are alive. The only thing the quota counts.</summary>
         public bool IsTreated
@@ -407,7 +419,7 @@ namespace Probation.Surgery
         {
             if (!IsServer || HasLeft) return;
 
-            HasLeft = true;
+            _hasLeft.Value = true;
             Ride?.Unload();
 
             var body = GetComponent<Rigidbody>();

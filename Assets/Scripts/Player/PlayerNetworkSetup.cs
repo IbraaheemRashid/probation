@@ -42,6 +42,45 @@ namespace Probation.Player
         public static PlayerNetworkSetup Local { get; private set; }
 
         /// <summary>
+        /// Whether this intern's hands are full, as everybody else sees it.
+        ///
+        /// One replicated bit, owner-written, and it is the single most important thing on the
+        /// wire for the co-op design: "that player is standing there with both hands full and
+        /// cannot come and help you" is what the whole thing turns on.
+        ///
+        /// It lives here rather than on Grabbable because the answer is about a PERSON, not an
+        /// object, and because three different things make it true - a tool, a haul, or a hand on
+        /// a wound. Grabbable._heldBy only ever answers the first: it is written in the Tool
+        /// branch of RequestGrabRpc and the Heavy branch falls through to a server-side list that
+        /// never replicates. So anybody pushing a gurney - which is most of the discharge loop -
+        /// read as empty-handed on every screen but their own.
+        /// </summary>
+        private readonly NetworkVariable<bool> _handsFull = new(
+            false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+        public bool HandsFull => _handsFull.Value;
+
+        /// <summary>Owner only. Called every frame by PlayerBody, which already works this out.</summary>
+        public void ReportHandsFull(bool full)
+        {
+            if (IsOwner && IsSpawned && _handsFull.Value != full) _handsFull.Value = full;
+        }
+
+        /// <summary>
+        /// Put this intern on the floor, wherever they are.
+        ///
+        /// Knockdown lives on PlayerLocomotion, which is a MonoBehaviour and is DISABLED on every
+        /// machine except its owner's. A parasite calls this from the server, so calling it
+        /// directly hit a disabled component on somebody else's body: no fall, no Invoke to
+        /// recover, and the rigidbody is kinematic there anyway. Nothing happened to anybody.
+        /// </summary>
+        [Rpc(SendTo.Owner)]
+        public void KnockdownRpc(float seconds, Vector3 impulse)
+        {
+            if (locomotion != null) locomotion.Knockdown(seconds, impulse);
+        }
+
+        /// <summary>
         /// Self-heal the brace.
         ///
         /// Every Player prefab authored before PlayerBrace existed is missing it, and the symptom

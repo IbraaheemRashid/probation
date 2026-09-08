@@ -370,7 +370,7 @@ namespace Probation.EditorTools
             }
 
             EnsureLobbyCamera();
-            PutGreyboxFirstInBuild();
+            PutShipFirstInBuild();
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             AssetDatabase.SaveAssets();
@@ -677,17 +677,7 @@ namespace Probation.EditorTools
                 return;
             }
 
-            System.IO.Directory.CreateDirectory(SurgeryAssetDir);
-            var thoracid = BuildThoracid();
-            var vithrid = BuildVithrid();
-            var triage = BuildTriage();
-            var extraction = BuildExtraction();
-            var broodExtraction = BuildBroodExtraction();
-            var (foreignBody, laceration, brood) =
-                BuildConditions(thoracid, vithrid, triage, extraction, broodExtraction);
-            var casebook = BuildCasebook(thoracid, vithrid, triage, extraction, broodExtraction,
-                                         foreignBody, laceration, brood);
-            AssetDatabase.SaveAssets();
+            var casebook = BuildCasebookAssets();
 
             var old = GameObject.Find("Ward");
             if (old != null) Object.DestroyImmediate(old);
@@ -748,6 +738,7 @@ namespace Probation.EditorTools
 
             var intake = Object.FindFirstObjectByType<PatientIntake>();
             if (intake != null) SetRefs(intake, ("casebook", casebook));
+            else Debug.LogWarning("[Probation] No PatientIntake - run Verify and Repair Scene.");
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             AssetDatabase.SaveAssets();
@@ -1549,7 +1540,7 @@ namespace Probation.EditorTools
             // Make it part of the project, not just a file on disk: listed in Build Settings,
             // loadable by name, and present in a player build so the two-machine test can use it.
             AddSceneToBuild(TestbedScenePath);
-            PutGreyboxFirstInBuild();
+            PutShipFirstInBuild();
             AssetDatabase.SaveAssets();
 
             Debug.Log($"[Probation] Surgery testbed written to {TestbedScenePath}. Press Play. " +
@@ -1821,6 +1812,48 @@ namespace Probation.EditorTools
                       "Probation > Verify and Repair Scene, which will tell you what is still missing.");
         }
 
+
+
+        /// <summary>
+        /// Write every species, procedure, condition and the casebook, from the values in code.
+        ///
+        /// Pulled out of step 7 because leaving it there was the single most expensive bug in this
+        /// project's history. A serialized field added to a ScriptableObject does nothing to an
+        /// asset that already exists - Unity loads the missing key as the type default - so three
+        /// separate features shipped switched off and nobody could tell:
+        ///
+        ///   carriesParasite  missing from Condition_Brood  -> the ENTIRE parasite system
+        ///                                                     unreachable in normal play
+        ///   testimony        missing from every condition   -> every interview answer was
+        ///                    and species                       "I do not know."
+        ///
+        /// None of it errored. The features simply were not there, and the only path that would
+        /// have fixed them was step 7, which rebuilds the OLD ward scene and which the playing
+        /// instructions correctly tell you not to run.
+        ///
+        /// So it is called from everywhere now: step 7, step 10, and Verify. Regenerating is
+        /// idempotent and costs nothing, and the alternative is this happening again on the next
+        /// field anybody adds.
+        /// </summary>
+        private static Casebook BuildCasebookAssets()
+        {
+            System.IO.Directory.CreateDirectory(SurgeryAssetDir);
+
+            var thoracid = BuildThoracid();
+            var vithrid = BuildVithrid();
+            var triage = BuildTriage();
+            var extraction = BuildExtraction();
+            var broodExtraction = BuildBroodExtraction();
+
+            var (foreignBody, laceration, brood) =
+                BuildConditions(thoracid, vithrid, triage, extraction, broodExtraction);
+
+            var casebook = BuildCasebook(thoracid, vithrid, triage, extraction, broodExtraction,
+                                         foreignBody, laceration, brood);
+
+            AssetDatabase.SaveAssets();
+            return casebook;
+        }
 
         // ------------------------------------------------------------------ light
 
@@ -2125,6 +2158,12 @@ namespace Probation.EditorTools
             foreach (var patient in Object.FindObjectsByType<Patient>(FindObjectsSortMode.None))
                 Object.DestroyImmediate(patient.gameObject);
 
+            // Regenerate the data before the scene, so a ship built today has today's fields.
+            var casebook = BuildCasebookAssets();
+
+            var intake = Object.FindFirstObjectByType<PatientIntake>();
+            if (intake != null) SetRefs(intake, ("casebook", casebook));
+
             var ship = new GameObject("Ship");
             var t = ship.transform;
 
@@ -2139,10 +2178,6 @@ namespace Probation.EditorTools
             BuildCorridors(t);
             BuildShipProps(t);
             BuildLighting(t);
-
-            var intake = Object.FindFirstObjectByType<PatientIntake>();
-            if (intake == null)
-                Debug.LogWarning("[Probation] No PatientIntake - run Verify and Repair Scene.");
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             AssetDatabase.SaveAssets();
@@ -2486,6 +2521,9 @@ namespace Probation.EditorTools
             added += Ensure<MainMenu>(go);
 
             added += BuildWardSystems(go);
+            // Rewrite the assets before checking them. A stale ScriptableObject is invisible -
+            // it does not error, the feature is just absent - so Verify has to fix rather than ask.
+            BuildCasebookAssets();
             problems += VerifyCasebook();
             added += RetuneHauling();
             added += FitWheels();
@@ -2609,7 +2647,7 @@ namespace Probation.EditorTools
             if (monitors == 0) { Debug.LogWarning("[Verify] No vitals monitor. Run step 7."); problems++; }
             if (tools == 0) { Debug.LogWarning("[Verify] No tools with ids. Run step 6."); problems++; }
 
-            PutGreyboxFirstInBuild();
+            PutShipFirstInBuild();
 
             SetProjectSetting("ProjectSettings/TimeManager.asset", "Fixed Timestep", 1f / 60f);
             SetGravity(GameGravity);
@@ -2946,12 +2984,22 @@ namespace Probation.EditorTools
             Debug.Log($"[Probation] Added {path} to Build Settings at index {scenes.Count - 1}.");
         }
 
-        private static void PutGreyboxFirstInBuild()
+        /// <summary>
+        /// The ship boots, not the old ward.
+        ///
+        /// This used to put Greybox first, from back when it was the only scene. A built game
+        /// therefore launched into a scene with no MainMenu on it - and BeginNight() is called
+        /// from exactly one place, which is that menu's button. So a build could host, spawn
+        /// everybody, let them walk around, and the clock read BEFORE THE SHIFT forever.
+        ///
+        /// Nothing errored. There was simply no way to start the game.
+        /// </summary>
+        private static void PutShipFirstInBuild()
         {
             var scenes = new System.Collections.Generic.List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
-            int index = scenes.FindIndex(x => x.path == GreyboxScenePath);
+            int index = scenes.FindIndex(x => x.path == MapScenePath);
 
-            if (index < 0) scenes.Insert(0, new EditorBuildSettingsScene(GreyboxScenePath, true));
+            if (index < 0) scenes.Insert(0, new EditorBuildSettingsScene(MapScenePath, true));
             else if (index > 0)
             {
                 var entry = scenes[index];
