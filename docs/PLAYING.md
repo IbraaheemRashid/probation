@@ -42,10 +42,16 @@ Then, on both machines:
 1. **Steam running and logged in.** Both of you need to be Steam friends — the lobby is created
    with `friendsOnly`, so a stranger cannot join even with the invite.
 2. **Launch the build by double-clicking the `.exe`**, not through the editor.
-3. Host presses **HOST A SHIFT**, waits for `hosting (<lobby id>)` in the Steam panel, then
-   **INVITE FRIENDS**.
-4. The other person accepts. They should land in the waiting room; the host's counter goes to
-   `2 interns on board`.
+3. Host presses **HOST A SHIFT**, then **INVITE FRIENDS**. That opens a panel with three ways
+   in — use whichever works:
+   - **Invite** next to a friend's name. A direct Steam invite; needs no overlay. Names marked
+     `*` already have the game running, which is the case that always works on app ID 480.
+   - **Copy ID**, then read the lobby ID out to them. They paste it into *Join by lobby ID* on
+     the Steam panel and press **Join**. This touches neither invites nor the overlay, so it is
+     the one to fall back to when nothing else responds.
+   - **Steam overlay** — the old behaviour. Nice when it works, silent when the overlay is not
+     injected into the process, which is most of the time outside a Steam-launched build.
+4. The other person lands in the waiting room; the host's counter goes to `2 interns on board`.
 5. Host presses **START THE NIGHT**.
 
 **F1 frees the mouse.** Once the night starts the cursor is captured by the camera, so the Steam

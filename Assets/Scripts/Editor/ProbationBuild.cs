@@ -66,6 +66,16 @@ namespace Probation.EditorTools
                 return;
             }
 
+            // BuildPlayer answers a failed compile with result Unknown and totalErrors 0, which
+            // reads as "something went wrong, no idea what" and sends you looking in the wrong
+            // place. The console already has the real errors; say so and stop.
+            if (EditorUtility.scriptCompilationFailed)
+            {
+                Debug.LogError("[Probation] Scripts do not compile - fix the errors above first. " +
+                               "No build was attempted.");
+                return;
+            }
+
             string[] scenes = Scenes();
             if (scenes.Length == 0)
             {
@@ -91,7 +101,9 @@ namespace Probation.EditorTools
 
             if (summary.result != BuildResult.Succeeded)
             {
-                Debug.LogError($"[Probation] Build {summary.result}. {summary.totalErrors} error(s).");
+                Debug.LogError($"[Probation] Build {summary.result}. {summary.totalErrors} error(s). " +
+                               "A result of Unknown with no errors almost always means a script " +
+                               "failed to compile - check the console above.");
                 return;
             }
 
