@@ -1,3 +1,4 @@
+using System.Linq;
 using Probation.Game;
 using Probation.Interaction;
 using Probation.Surgery;
@@ -7,6 +8,7 @@ using Unity.Netcode.Components;
 using Netcode.Transports.Facepunch;
 using Unity.Netcode.Transports.UTP;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -2457,6 +2459,256 @@ namespace Probation.EditorTools
             go.transform.SetParent(parent, true);
             go.transform.position = position;
             go.AddComponent<ShipNode>();
+        }
+
+        // ------------------------------------------------------------------ 11
+
+        private const string ModelFolder = "Assets/Models/AlienSurgeon";
+        private const string CharacterFbxPath = ModelFolder + "/Meshy_AI_alien_surgeon_quad_re_biped_Character_output.fbx";
+        private const string WalkFbxPath = ModelFolder + "/Meshy_AI_alien_surgeon_quad_re_biped_Animation_Walking_frame_rate_60.fbx";
+        private const string BaseColorTexPath = ModelFolder + "/Meshy_AI_alien_surgeon_quad_re_biped_texture_0.png";
+        private const string MaterialPath = ModelFolder + "/AlienSurgeon.mat";
+        private const string ControllerPath = ModelFolder + "/AlienSurgeon.controller";
+
+        /// <summary>
+        /// Rig the Meshy export onto the Player prefab: Humanoid avatar on both FBX files, a
+        /// material off the base colour map, a one-state Animator whose playback rate IS the
+        /// Speed parameter (so Speed 0 holds a frozen frame - there is no separate Idle clip),
+        /// and NetworkAnimator so a remote intern's walk cycle matches what its owner is doing.
+        ///
+        /// Safe to re-run - it replaces its own "Body" child rather than piling up copies.
+        /// </summary>
+        [MenuItem("Probation/Setup/11 - Rig Player Model", priority = 10)]
+        public static void RigPlayerModel()
+        {
+            var characterAvatar = ConfigureCharacterImport();
+            if (characterAvatar == null) return;
+
+            var walkClip = ConfigureAnimationImport(characterAvatar);
+            if (walkClip == null) return;
+
+            var material = BuildAlienMaterial();
+            var controller = BuildLocomotionController(walkClip);
+
+            var characterAsset = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterFbxPath);
+            var contents = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            try
+            {
+                StripMissingScripts(contents);
+
+                var old = contents.transform.Find("Body");
+                if (old != null) Object.DestroyImmediate(old.gameObject);
+
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(characterAsset, contents.transform);
+                instance.name = "Body";
+                instance.transform.localPosition = Vector3.zero;
+                instance.transform.localRotation = Quaternion.identity;
+                instance.transform.localScale = Vector3.one;
+
+                foreach (var renderer in instance.GetComponentsInChildren<Renderer>())
+                {
+                    var mats = renderer.sharedMaterials;
+                    for (int i = 0; i < mats.Length; i++) mats[i] = material;
+                    renderer.sharedMaterials = mats;
+                }
+
+                FitToCapsule(instance, contents);
+
+                var animator = instance.GetComponent<Animator>();
+                if (animator == null) animator = instance.AddComponent<Animator>();
+                animator.avatar = characterAvatar;
+                animator.applyRootMotion = false;
+                animator.runtimeAnimatorController = controller;
+
+                var networkAnimator = instance.GetComponent<NetworkAnimator>();
+                if (networkAnimator == null) networkAnimator = instance.AddComponent<NetworkAnimator>();
+                SetRefs(networkAnimator, ("m_Animator", animator));
+
+                var body = contents.GetComponent<PlayerBody>();
+                if (body == null) body = contents.AddComponent<PlayerBody>();
+                SetRefs(body,
+                    ("modelRoot", instance.transform),
+                    ("modelAnimator", animator),
+                    ("locomotion", contents.GetComponent<PlayerLocomotion>()));
+
+                PrefabUtility.SaveAsPrefabAsset(contents, PlayerPrefabPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(contents);
+            }
+
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Probation] Player prefab now carries the Body model. Metallic/roughness " +
+                      "maps are on disk next to the base colour texture but not wired into the " +
+                      "material - pack them into a mask map if the flat default gloss looks wrong.");
+        }
+
+        /// <summary>Humanoid rig on the character FBX. Returns the generated Avatar, or null on failure.</summary>
+        private static Avatar ConfigureCharacterImport()
+        {
+            AssetDatabase.ImportAsset(CharacterFbxPath, ImportAssetOptions.ForceSynchronousImport);
+            var importer = AssetImporter.GetAtPath(CharacterFbxPath) as ModelImporter;
+            if (importer == null)
+            {
+                Debug.LogError($"[Probation] No FBX at {CharacterFbxPath}. Drop the Meshy export in Assets/Models/AlienSurgeon first.");
+                return null;
+            }
+
+            importer.animationType = ModelImporterAnimationType.Human;
+            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+
+            // Optimize Game Objects prunes the transform hierarchy for anything the retargeter
+            // does not need for muscle animation, and GetBoneTransform(HumanBodyBones.Head) -
+            // which the head-pitch look depends on - can come back null once it does.
+            importer.optimizeGameObjects = false;
+            importer.SaveAndReimport();
+
+            var avatar = AssetDatabase.LoadAllAssetsAtPath(CharacterFbxPath).OfType<Avatar>().FirstOrDefault();
+            if (avatar == null || !avatar.isValid || !avatar.isHuman)
+            {
+                Debug.LogError("[Probation] Humanoid avatar setup failed - the rig likely does not " +
+                                "auto-map. Open the FBX's Rig tab, configure the Avatar by hand, then re-run this step.");
+                return null;
+            }
+
+            return avatar;
+        }
+
+        /// <summary>Humanoid rig on the walk FBX, retargeted onto the character's avatar. Returns the walk clip, or null on failure.</summary>
+        private static AnimationClip ConfigureAnimationImport(Avatar characterAvatar)
+        {
+            AssetDatabase.ImportAsset(WalkFbxPath, ImportAssetOptions.ForceSynchronousImport);
+            var importer = AssetImporter.GetAtPath(WalkFbxPath) as ModelImporter;
+            if (importer == null)
+            {
+                Debug.LogError($"[Probation] No FBX at {WalkFbxPath}.");
+                return null;
+            }
+
+            importer.animationType = ModelImporterAnimationType.Human;
+            importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+            importer.sourceAvatar = characterAvatar;
+
+            var clipInfos = importer.defaultClipAnimations;
+            for (int i = 0; i < clipInfos.Length; i++) clipInfos[i].loopTime = true;
+            importer.clipAnimations = clipInfos;
+
+            importer.SaveAndReimport();
+
+            var clip = AssetDatabase.LoadAllAssetsAtPath(WalkFbxPath).OfType<AnimationClip>()
+                                     .FirstOrDefault(c => !c.name.StartsWith("__preview__"));
+            if (clip == null)
+                Debug.LogError($"[Probation] No animation clip found in {WalkFbxPath}.");
+
+            return clip;
+        }
+
+        private static Material BuildAlienMaterial()
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+
+            if (material == null)
+            {
+                material = new Material(shader) { name = "AlienSurgeon" };
+                AssetDatabase.CreateAsset(material, MaterialPath);
+            }
+            else
+            {
+                material.shader = shader;
+            }
+
+            var baseMap = AssetDatabase.LoadAssetAtPath<Texture2D>(BaseColorTexPath);
+            if (baseMap != null) material.SetTexture("_BaseMap", baseMap);
+
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        /// <summary>
+        /// One state, one clip. Its own playback speed IS the Speed parameter, so Speed 0 holds
+        /// a still frame instead of needing a separate Idle clip nobody exported. NetworkAnimator
+        /// replicates float parameters on its own, so this needs no transitions to sync correctly.
+        /// </summary>
+        private static AnimatorController BuildLocomotionController(AnimationClip walkClip)
+        {
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath)
+                           ?? AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
+
+            if (controller.parameters.All(p => p.name != "Speed"))
+                controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+
+            var stateMachine = controller.layers[0].stateMachine;
+            var walkState = stateMachine.states.Select(s => s.state).FirstOrDefault(s => s.name == "Walk")
+                          ?? stateMachine.AddState("Walk");
+
+            walkState.motion = walkClip;
+            walkState.speedParameterActive = true;
+            walkState.speedParameter = "Speed";
+            stateMachine.defaultState = walkState;
+
+            EditorUtility.SetDirty(controller);
+            return controller;
+        }
+
+        /// <summary>
+        /// Scale the imported model to the Player prefab's own capsule height, then drop it so
+        /// its feet land on the floor the ride spring is holding this transform's origin above -
+        /// standRideHeight IS that distance (see PlayerLocomotion), regardless of where the FBX's
+        /// own pivot happens to sit.
+        /// </summary>
+        private static void FitToCapsule(GameObject instance, GameObject playerRoot)
+        {
+            var renderers = instance.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                Debug.LogWarning("[Probation] Imported model has no renderers to measure - left at scale 1, position 0.");
+                return;
+            }
+
+            Bounds Measure()
+            {
+                var bounds = renderers[0].bounds;
+                foreach (var r in renderers) bounds.Encapsulate(r.bounds);
+                return bounds;
+            }
+
+            var capsule = playerRoot.GetComponent<CapsuleCollider>();
+            float targetHeight = capsule != null ? capsule.height : 1.8f;
+
+            float measuredHeight = Measure().size.y;
+            if (measuredHeight > 0.0001f)
+                instance.transform.localScale = Vector3.one * (targetHeight / measuredHeight);
+
+            float rideHeight = 0.95f;
+            var locomotion = playerRoot.GetComponent<PlayerLocomotion>();
+            if (locomotion != null)
+            {
+                var prop = new SerializedObject(locomotion).FindProperty("standRideHeight");
+                if (prop != null) rideHeight = prop.floatValue;
+            }
+
+            float feetY = Measure().min.y;
+            instance.transform.localPosition += new Vector3(0f, -rideHeight - feetY, 0f);
+        }
+
+        // ------------------------------------------------------------------ debug
+
+        /// <summary>
+        /// Removes whatever Add Mirror To Scene left behind. The mirror didn't work out - this
+        /// is one-shot cleanup, not a tool to keep around, so delete this method (and Add Mirror
+        /// To Scene's old body above it, if still there) once the scene is clean.
+        /// </summary>
+        [MenuItem("Probation/Debug/Remove Mirror From Scene", priority = 100)]
+        public static void RemoveMirrorFromScene()
+        {
+            var mirror = GameObject.Find("Mirror (debug)");
+            if (mirror != null) Object.DestroyImmediate(mirror);
+
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Probation] Mirror removed from the scene.");
         }
 
         [MenuItem("Probation/Verify and Repair Scene", priority = 20)]

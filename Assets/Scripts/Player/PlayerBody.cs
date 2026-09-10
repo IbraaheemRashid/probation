@@ -45,12 +45,20 @@ namespace Probation.Player
         [SerializeField] private float graspSpread = 0.15f;
         [SerializeField] private float handEase = 12f;
 
+        [Header("Model")]
+        [Tooltip("The rigged character, parented directly under the root (not the pivot). Leave empty to fall back to the primitive capsule + head.")]
+        [SerializeField] private Transform modelRoot;
+        [Tooltip("Animator on modelRoot. Its 'Speed' float is fed from PlayerLocomotion so the walk cycle plays at the intern's actual pace, and NetworkAnimator (on the same object) carries that to everyone else.")]
+        [SerializeField] private Animator modelAnimator;
+        [SerializeField] private PlayerLocomotion locomotion;
+
         private Transform _pivot;
         private Transform _handAnchor;
         private Transform _torso;
         private Transform _skull;
         private Transform _leftHand;
         private Transform _rightHand;
+        private Transform _headBone;
 
         private NetworkObject _net;
         private PlayerCarry _carry;
@@ -70,8 +78,12 @@ namespace Probation.Player
             _net = GetComponent<NetworkObject>();
             _carry = GetComponent<PlayerCarry>();
             _hands = GetComponent<PlayerHands>();
+            if (locomotion == null) locomotion = GetComponent<PlayerLocomotion>();
             _pivot = transform.Find("CameraPivot");
             _handAnchor = _pivot != null ? _pivot.Find("HandAnchor") : null;
+
+            if (modelAnimator != null && modelAnimator.isHuman)
+                _headBone = modelAnimator.GetBoneTransform(HumanBodyBones.Head);
 
             Build();
         }
@@ -85,17 +97,26 @@ namespace Probation.Player
             float radius = capsule != null ? capsule.radius : 0.3f;
             float centre = capsule != null ? capsule.center.y : 0f;
 
-            // A Unity capsule primitive is 2 units tall and 1 across, so half the height.
-            _torso = Part(PrimitiveType.Capsule, "Torso", transform,
-                          new Vector3(0f, centre, 0f),
-                          new Vector3(radius * 2f, height * 0.5f, radius * 2f));
+            // Only fall back to primitives if nobody has hooked up a real model - built from
+            // primitives at runtime was always meant to hold the place until one existed.
+            if (modelRoot == null)
+            {
+                _torso = Part(PrimitiveType.Capsule, "Torso", transform,
+                              new Vector3(0f, centre, 0f),
+                              new Vector3(radius * 2f, height * 0.5f, radius * 2f));
 
+                var fallbackHeadParent = _pivot != null ? _pivot : transform;
+
+                // On the pivot, so it pitches with the camera. Somebody leaning over a patient
+                // reads as leaning over a patient rather than as standing perfectly upright
+                // looking down.
+                _skull = Part(PrimitiveType.Cube, "Head", fallbackHeadParent,
+                              new Vector3(0f, 0f, 0.06f), Vector3.one * (radius * 1.05f));
+            }
+
+            // Hands stay primitives regardless of the model - they track the carried object via
+            // the hand anchor, and the rig has no IK to put a real hand there yet.
             var headParent = _pivot != null ? _pivot : transform;
-
-            // On the pivot, so it pitches with the camera. Somebody leaning over a patient reads
-            // as leaning over a patient rather than as standing perfectly upright looking down.
-            _skull = Part(PrimitiveType.Cube, "Head", headParent,
-                          new Vector3(0f, 0f, 0.06f), Vector3.one * (radius * 1.05f));
 
             _leftHand = Part(PrimitiveType.Cube, "Hand L", headParent,
                              new Vector3(-restHand.x, restHand.y, restHand.z), Vector3.one * 0.12f);
@@ -180,6 +201,9 @@ namespace Probation.Player
 
             SetVisible(_torso, false);
             SetVisible(_skull, false);
+            if (modelRoot != null)
+                foreach (var renderer in modelRoot.GetComponentsInChildren<Renderer>(true))
+                    renderer.enabled = false;
             ShowOwnHands(false);
         }
 
@@ -208,8 +232,15 @@ namespace Probation.Player
             block.SetColor(BaseColour, colour);
             block.SetColor(LegacyColour, colour);
 
+            // The primitives are one shared magenta-shader material and need the tint just to
+            // read as anything at all. The model comes textured - tinting it would just muddy
+            // an actual paint job, so per-intern colour stays on the hands only where it still
+            // carries the same "which one is this" information.
             foreach (var renderer in GetComponentsInChildren<Renderer>(true))
+            {
+                if (modelRoot != null && renderer.transform.IsChildOf(modelRoot)) continue;
                 renderer.SetPropertyBlock(block);
+            }
         }
 
         private static readonly int BaseColour = Shader.PropertyToID("_BaseColor");
@@ -233,7 +264,49 @@ namespace Probation.Player
 
             Ease(_rightHand, HandsFull ? Grasp(+1f) : restHand, t);
             Ease(_leftHand, HandsFull ? Grasp(-1f) : new Vector3(-restHand.x, restHand.y, restHand.z), t);
+
+            UpdateModel();
         }
+
+        /// <summary>
+        /// Turn the model to face the pivot's yaw, tip its head bone to the pivot's pitch, and
+        /// feed the walk cycle a speed.
+        ///
+        /// Reads the pivot's actual localRotation rather than PlayerLook's Yaw/Pitch properties
+        /// on purpose - PlayerLook is disabled on every player object except its owner (see
+        /// PlayerNetworkSetup), so on a remote intern those properties are frozen at whatever
+        /// they were the moment ownership was decided. The pivot's transform keeps moving on
+        /// every client regardless, because NetworkTransform replicates it directly.
+        /// </summary>
+        private void UpdateModel()
+        {
+            if (modelRoot == null || _pivot == null) return;
+
+            Vector3 pivotEuler = _pivot.localEulerAngles;
+            modelRoot.localRotation = Quaternion.Euler(0f, pivotEuler.y, 0f);
+
+            if (_headBone != null)
+            {
+                float pitch = NormalizeAngle(pivotEuler.x);
+                // Sign and axis both depend on how this rig's head bone is oriented at rest -
+                // flip the sign here if a downward look tips the head back instead of forward.
+                _headBone.Rotate(-pitch, 0f, 0f, Space.Self);
+            }
+
+            // Only the owner has a live PlayerLocomotion (PlayerNetworkSetup disables it for
+            // everyone else), so only the owner can know its own speed. NetworkAnimator, sitting
+            // on the same object as modelAnimator, carries the parameter to every other client.
+            if (_isOwner && modelAnimator != null && locomotion != null)
+                modelAnimator.SetFloat(SpeedParam, locomotion.NormalizedSpeed);
+        }
+
+        private static float NormalizeAngle(float degrees)
+        {
+            degrees %= 360f;
+            return degrees > 180f ? degrees - 360f : degrees;
+        }
+
+        private static readonly int SpeedParam = Animator.StringToHash("Speed");
 
         private static void Ease(Transform hand, Vector3 target, float t)
         {

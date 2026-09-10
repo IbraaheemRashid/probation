@@ -123,6 +123,16 @@ namespace Probation.Player
         public Vector3 Velocity => _rb.linearVelocity;
         public Rigidbody Body => _rb;
 
+        /// <summary>Horizontal speed only - the ride spring's vertical corrections are not gait.</summary>
+        public float PlanarSpeed => new Vector2(Velocity.x, Velocity.z).magnitude;
+
+        /// <summary>
+        /// PlanarSpeed as a fraction of walkSpeed, for driving a walk cycle's playback rate.
+        /// Not clamped to 1 - sprinting should visibly outrun the cycle it was tuned at, not
+        /// hit a ceiling and freeze relative to how fast the intern is actually moving.
+        /// </summary>
+        public float NormalizedSpeed => walkSpeed > 0f ? PlanarSpeed / walkSpeed : 0f;
+
         private Rigidbody _rb;
         private CapsuleCollider _capsule;
 
