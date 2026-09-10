@@ -43,6 +43,9 @@ namespace Probation.Player
         /// </summary>
         public bool LookIsPointer { get; private set; }
 
+        /// <summary>True only on the frame the free-cursor key went down. Read by CursorLock.</summary>
+        public bool FreeCursorPressed { get; private set; }
+
         /// <summary>Whether this reader's own action map is live. Shown in the F3 overlay.</summary>
         public bool ActionsEnabled => _map != null && _map.enabled;
 
@@ -54,6 +57,7 @@ namespace Probation.Player
         private InputActionAsset _ownCopy;
         private InputActionMap _map;
         private InputAction _move, _look, _sprint, _crouch, _jump, _interact, _attack, _brace;
+        private InputAction _freeCursor;
 
         private void Awake()
         {
@@ -83,6 +87,15 @@ namespace Probation.Player
             _interact = _map.FindAction("Interact", throwIfNotFound: true);
             _attack = _map.FindAction("Attack", throwIfNotFound: true);
             _brace = _map.FindAction("Brace", throwIfNotFound: true);
+
+            // Not throwIfNotFound, unlike everything above it. This action was added after the
+            // asset shipped, so a project with an older InputSystem_Actions is missing it - and
+            // the cost of that should be "no free-cursor key", not a player that cannot move.
+            _freeCursor = _map.FindAction("FreeCursor", throwIfNotFound: false);
+            if (_freeCursor == null)
+                Debug.LogWarning($"[Probation] No 'FreeCursor' action in the '{actionMapName}' map. " +
+                                 "F1 will not release the cursor. Add a Button action named " +
+                                 "FreeCursor bound to <Keyboard>/f1.", this);
         }
 
         private void OnEnable() => _map?.Enable();
@@ -99,10 +112,34 @@ namespace Probation.Player
             Sprint = Crouch = Attack = false;
             InteractPressed = InteractHeld = InteractReleased = false;
             Brace = BracePressed = BraceReleased = false;
+            FreeCursorPressed = false;
         }
 
         private void Update()
         {
+            // Read before the free-cursor gate below, or the key that let the cursor go would be
+            // the one input that could not take it back.
+            FreeCursorPressed = _freeCursor != null && _freeCursor.WasPressedThisFrame();
+
+            // Pointing at a button is not playing. Report neutral for everything else while the
+            // cursor is loose, so clicking "Invite friends" over a running shift cannot also
+            // swing whatever is in your hands, and so the head does not follow the pointer.
+            //
+            // Zeroing Brace here is enough to unwind a brace cleanly: PlayerBrace unbraces on
+            // any frame CanHoldBrace() is false, which reads this same flag.
+            if (CursorLock.Freed)
+            {
+                Move = Look = Vector2.zero;
+                Sprint = Crouch = Attack = false;
+                InteractPressed = InteractHeld = InteractReleased = false;
+                Brace = BracePressed = BraceReleased = false;
+
+                // Latched, not polled - a jump caught on the frame the cursor came loose would
+                // otherwise still be waiting when it went back.
+                ConsumeJump();
+                return;
+            }
+
             Move = _move.ReadValue<Vector2>();
             Look = _look.ReadValue<Vector2>();
             LookIsPointer = _look.activeControl?.device is Pointer;

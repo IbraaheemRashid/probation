@@ -48,6 +48,12 @@ Then, on both machines:
    `2 interns on board`.
 5. Host presses **START THE NIGHT**.
 
+**F1 frees the mouse.** Once the night starts the cursor is captured by the camera, so the Steam
+panel and the diagnostics overlay are visible but unclickable. F1 toggles it: the view stops
+following the mouse, you get a pointer, and a `CURSOR FREE` line appears at the top of the screen.
+Your intern stands still while it is loose — movement, interact and brace all read as neutral, so
+clicking a button cannot also swing whatever is in your hands. F1 again to play.
+
 ### The app ID caveat
 
 The project ships with app ID **480** — Valve's Spacewar test app — because it needs a real one to
