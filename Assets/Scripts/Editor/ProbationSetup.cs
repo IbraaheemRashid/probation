@@ -556,7 +556,8 @@ namespace Probation.EditorTools
 
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             Debug.Log("[Probation] Steam networking added. Steam must be running and logged in. " +
-                      "steam_appid.txt (480) must sit beside the built .exe as well as in the project root.");
+                      "Invites only work from a build - the overlay does not exist in the editor. " +
+                      "Probation > Build > Playtest Build handles steam_appid.txt for you.");
         }
 
         // ------------------------------------------------------------------ 6
@@ -1766,10 +1767,13 @@ namespace Probation.EditorTools
             var bootstrap = managerGo.AddComponent<NetworkBootstrap>();
             var bootSo = new SerializedObject(bootstrap);
 
-            // On, because you are going to press Play a hundred times while moving walls around
-            // and clicking Host each time is friction between you and the thing you are judging.
-            // Turn it off when you want the Steam lobby panel instead.
-            bootSo.FindProperty("autoHost").boolValue = true;
+            // Off, and it has to be off on this scene specifically. autoHost starts a host on
+            // UnityTransport the moment the scene loads, which makes NetworkManager.IsListening
+            // true before the title card is ever drawn - so MainMenu skips "HOST A SHIFT", goes
+            // straight to the waiting room, and "INVITE FRIENDS" then has no Steam lobby to point
+            // at and silently does nothing. Map is the scene people actually play together, so it
+            // gets the Steam path. The spike scenes keep autoHost.
+            bootSo.FindProperty("autoHost").boolValue = false;
             bootSo.ApplyModifiedPropertiesWithoutUndo();
 
             managerGo.AddComponent<NetworkDiagnostics>();

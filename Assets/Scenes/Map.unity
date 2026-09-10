@@ -8628,7 +8628,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Probation.Player.NetworkBootstrap
   address: 127.0.0.1
   port: 7777
-  autoHost: 1
+  autoHost: 0
 --- !u!114 &1224256262
 MonoBehaviour:
   m_ObjectHideFlags: 0

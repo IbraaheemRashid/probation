@@ -21,7 +21,45 @@ Press Play. You get the title card.
 - **HOST A SHIFT** — needs Steam running. Everyone else accepts an invite.
 - **START THE NIGHT** — the host opens the doors once everybody is aboard.
 
-Solo, `autoHost` is on, so you land straight in the lobby and can start immediately.
+Solo, press **HOST A SHIFT** and then **START THE NIGHT**. `autoHost` on the NetworkBootstrap
+used to skip that, but it starts a host on the *direct-IP* transport, which quietly makes Steam
+hosting impossible for the rest of the session — the title card jumps straight to the waiting room
+and **INVITE FRIENDS** has no lobby to invite anybody to. It is off now. If you want the old
+one-click solo start back, use the direct-IP panel rather than turning it on again.
+
+## Playing with somebody else
+
+**This does not work from the editor.** The Steam overlay has to be injected before the renderer
+starts, and in Play mode it never is, so `OpenGameInviteOverlay` silently does nothing. Invites can
+only be tested from a build.
+
+Run `Probation > Build > Playtest Build (Win64)`. It builds `Map.unity` to `Builds/Playtest/` and
+copies `steam_appid.txt` beside the `.exe`, which is where Steam looks for it — the copy in the
+project root is only ever read by the editor.
+
+Then, on both machines:
+
+1. **Steam running and logged in.** Both of you need to be Steam friends — the lobby is created
+   with `friendsOnly`, so a stranger cannot join even with the invite.
+2. **Launch the build by double-clicking the `.exe`**, not through the editor.
+3. Host presses **HOST A SHIFT**, waits for `hosting (<lobby id>)` in the Steam panel, then
+   **INVITE FRIENDS**.
+4. The other person accepts. They should land in the waiting room; the host's counter goes to
+   `2 interns on board`.
+5. Host presses **START THE NIGHT**.
+
+### The app ID caveat
+
+The project ships with app ID **480** — Valve's Spacewar test app — because it needs a real one to
+talk to Steam at all and we do not have ours yet. Consequences, all of them cosmetic-or-worse:
+
+- Your friend's invite says **Spacewar**, not Probation.
+- **Their copy of the build has to already be running when the invite arrives.** If it is not,
+  Steam tries to launch Spacewar from their library instead of your game, and nothing happens.
+  This is the single most common way a playtest invite appears to fail.
+- Anyone on your friends list sees you playing Spacewar.
+
+A real app ID fixes all three. Until then: both people launch the build first, *then* invite.
 
 ## One night, start to finish
 
